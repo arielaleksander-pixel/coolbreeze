@@ -418,6 +418,8 @@ tbody td{padding:9px 12px;color:var(--gray-700);vertical-align:middle}
           <th>QB Balance</th>
           <th>ST Balance</th>
           <th>Difference</th>
+          <th>ST Membership</th>
+          <th>ServiceTitan</th>
         </tr></thead>
         <tbody id="memBody"></tbody>
       </table>
@@ -517,6 +519,8 @@ const QB_MEMBERSHIP_FIELD_ALIASES = {
 const ST_MEMBERSHIP_FIELD_ALIASES = {
   customer: ['customer name','customer'],
   balance:  ['deferred revenue balance','deferred balance','balance'],
+  membershipId:   ['membership id','membership #','membership number'],
+  membershipType: ['membership type','membership name','type'],
 };
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -1002,13 +1006,24 @@ function buildMembershipReconciliation(qbRaw,stRaw){
   stObjs.forEach(obj=>{
     const custRaw=pickField(obj,ST_MEMBERSHIP_FIELD_ALIASES.customer);
     const balRaw=pickField(obj,ST_MEMBERSHIP_FIELD_ALIASES.balance);
+    const idRaw=pickField(obj,ST_MEMBERSHIP_FIELD_ALIASES.membershipId);
+    const typeRaw=pickField(obj,ST_MEMBERSHIP_FIELD_ALIASES.membershipType);
     if(custRaw===undefined)unmapped.add('ST customer');
     if(balRaw===undefined)unmapped.add('ST balance');
     const customer=String(custRaw||'').trim();
     if(!customer||JUNK_VENDOR_RE.test(customer))return;
     const key=vendorKey(customer);
-    if(!stByCustomer.has(key))stByCustomer.set(key,{customer,amount:0});
-    stByCustomer.get(key).amount+=sf(balRaw);
+    if(!stByCustomer.has(key))stByCustomer.set(key,{customer,amount:0,memberships:[]});
+    const entry=stByCustomer.get(key);
+    entry.amount+=sf(balRaw);
+    // A customer can hold more than one membership (e.g. HVAC + plumbing
+    // plans) — keep each one's own id/type/balance so the table can list
+    // and link to all of them, not just show the customer-level total.
+    entry.memberships.push({
+      id:idRaw!=null&&idRaw!==''?String(idRaw).trim():'',
+      type:typeRaw!=null&&typeRaw!==''?String(typeRaw).trim():'',
+      balance:sf(balRaw)
+    });
   });
 
   if(unmapped.size)console.warn('[Coolbreeze] Membership Balance: could not confidently map columns for: '+[...unmapped].join(', ')+'. Extend QB_MEMBERSHIP_FIELD_ALIASES/ST_MEMBERSHIP_FIELD_ALIASES at the top of the script if these look wrong.');
@@ -1026,7 +1041,8 @@ function buildMembershipReconciliation(qbRaw,stRaw){
     else status='st_only';
     results.push({
       customer:(qb&&qb.customer)||(st&&st.customer)||'(Unknown Customer)',
-      qbAmount, stAmount, diff, status
+      qbAmount, stAmount, diff, status,
+      stMemberships:(st&&st.memberships)||[]
     });
   });
   return results;
@@ -1565,14 +1581,19 @@ function renderMembershipTable(){
   document.getElementById('memBody').innerHTML=rows.map(r=>{
     const meta=STATUS_META[r.status];
     const diffCls=Math.abs(r.diff)<=AMOUNT_TOLERANCE?'td-diff-ok':'td-diff-bad';
+    const memberships=r.stMemberships||[];
+    const memNames=memberships.length?memberships.map(m=>m.type||'(Unnamed Membership)').join('<br>'):'—';
+    const memLinks=memberships.length?memberships.map(m=>m.id?`<a class="btn-open-qbo" href="https://go.servicetitan.com/#/FollowUps/Membership/${encodeURIComponent(m.id)}" target="_blank" rel="noopener noreferrer">Open ↗</a>`:'—').join('<br>'):'—';
     return `<tr>
       <td><span class="badge ${meta.cls}">${meta.label}</span></td>
       <td class="td-vend">${r.customer}</td>
       <td class="td-val">${r.qbAmount!==null?fmtFull(r.qbAmount):'—'}</td>
       <td class="td-val">${r.stAmount!==null?fmtFull(r.stAmount):'—'}</td>
       <td class="${diffCls}">${r.diff>0?'+':''}${fmtFull(r.diff)}</td>
+      <td>${memNames}</td>
+      <td>${memLinks}</td>
     </tr>`;
-  }).join('') || `<tr><td colspan="5" style="text-align:center;color:var(--gray-500);padding:24px">No membership records match the current filters.</td></tr>`;
+  }).join('') || `<tr><td colspan="7" style="text-align:center;color:var(--gray-500);padding:24px">No membership records match the current filters.</td></tr>`;
   let countText=`${sorted.length} of ${ALL_MEMBERSHIP.length} customer`+(ALL_MEMBERSHIP.length===1?'':'s');
   if(sorted.length>MEM_ROW_CAP){
     countText+=` (showing first ${MEM_ROW_CAP} — narrow the filter to see the rest)`;
@@ -1668,4 +1689,3 @@ document.addEventListener('DOMContentLoaded',loadAndInit);
 </script>
 </body>
 </html>
-  
