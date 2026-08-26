@@ -1,0 +1,1595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coolbreeze — Accounting Reconciliation</title>
+<!--
+  ══════════════════════════════════════════════════════════════════════════
+  COOLBREEZE ACCOUNTING RECONCILIATION DASHBOARD
+  ══════════════════════════════════════════════════════════════════════════
+  Built on the same single-file architecture as the Sunline Estimates
+  Dashboard (Projects/Sunline/Sunline_Estimates_Dashboard.html):
+    - One HTML file, Chart.js + SheetJS(xlsx) from cdnjs, no build step.
+    - Sticky navy header + icon sidebar + per-tab filter bar ("fbar").
+    - Data loads from a Google Apps Script Web App (GAS_URL) via
+      fetch(GAS_URL + '?report=' + key), with a cache-first / background-
+      refresh pattern (localStorage) identical to Sunline's.
+    - Adding a 2nd/3rd tab later: duplicate a <div class="db-panel"> block,
+      add a matching <button class="sidebar-item"> in the sidebar calling
+      showDB(n), and add the panel's init/apply/render functions — same
+      pattern Sunline uses for its 7 tabs (Jobs, Job Costing, Payroll, etc).
+
+  ── THINGS TO CONFIRM / ADJUST BEFORE GOING LIVE ──
+  1) REPORT KEYS (below, in CONFIG): this file calls
+        GAS_URL + '?report=quickbooksBills'
+        GAS_URL + '?report=servicetitanBills'
+     exactly like Sunline calls '?report=estimates', '?report=jobs', etc.
+     When you open the Coolbreeze Apps Script project, confirm the doGet(e)
+     function branches on e.parameter.report with these two keys (or update
+     REPORT_KEY_QB / REPORT_KEY_ST below to whatever it actually uses) and
+     returns JSON ({values:[...]} , {data:[...]}, or a bare array — same
+     three shapes fetchReport() already understands). If it currently only
+     serves an HTML page, doGet needs a branch like:
+       if (e.parameter.report) return ContentService
+         .createTextOutput(JSON.stringify(rows))
+         .setMimeType(ContentService.MimeType.JSON);
+  2) COLUMN NAMES: normalizeRow() below looks for common header variants
+     (Vendor / Bill Number / Amount / Date, etc. — see FIELD_ALIASES). It
+     will auto-detect close variants, but check the "Unmapped columns"
+     console warning after first load and extend FIELD_ALIASES if a column
+     isn't being picked up.
+  3) BRANDING: colors/logo are a placeholder cool-blue/teal palette (the
+     public Coolbreeze site didn't expose brand hex codes to fetch). Swap
+     the CSS variables in :root and the inline <svg class="logo-svg"> below
+     for the real logo/colors whenever you have them.
+  ══════════════════════════════════════════════════════════════════════════
+-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --navy:#0a2540; --navy-mid:#123a5c; --teal:#0e93a8; --cyan:#22d3ee; --accent:#22d3ee;
+  --blue:#2563eb; --green:#0fa572; --amber:#e08a1e; --red:#dc2626;
+  --gray-50:#f6f9fb; --gray-100:#eef2f6; --gray-200:#dde4ec;
+  --gray-500:#7a8ba0; --gray-700:#3d4f63; --text:#132537;
+  --radius:10px; --shadow:0 2px 8px rgba(10,37,64,.09);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color:var(--text);font-size:14px;display:flex;flex-direction:column;min-height:100vh}
+
+/* ── HEADER ── */
+header{background:var(--navy);padding:0 32px;display:flex;align-items:center;justify-content:space-between;height:68px;border-bottom:3px solid var(--accent);position:sticky;top:0;z-index:100;box-shadow:0 2px 16px rgba(0,0,0,.35)}
+.hdr-l{display:flex;align-items:center;gap:20px}
+.hdr-div{width:1px;height:32px;background:rgba(255,255,255,.15)}
+.hdr-t h1{font-size:15px;font-weight:700;color:#fff}
+.hdr-t p{font-size:11px;color:rgba(255,255,255,.5);margin-top:1px}
+.hdr-badge{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.7);padding:5px 14px;border-radius:20px;font-size:11px}
+.svc-badge{background:rgba(34,211,238,.15);border-color:rgba(34,211,238,.4);color:#67e8f9}
+.logo-svg{height:42px;width:auto}
+.hdr-btn{background:transparent;border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.6);padding:5px 13px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700;letter-spacing:.3px;transition:all .2s}
+.hdr-btn:hover{color:#fff;border-color:rgba(255,255,255,.5)}
+.hdr-btn.hard{background:rgba(34,211,238,.12);border-color:rgba(34,211,238,.4);color:#67e8f9}
+.hdr-btn.hard:hover{background:rgba(34,211,238,.22)}
+
+/* ── FILTER BAR ── */
+.fbar{background:var(--navy-mid);padding:11px 32px;display:flex;align-items:center;gap:14px;border-bottom:1px solid rgba(255,255,255,.06);flex-wrap:wrap}
+.fbar label{color:rgba(255,255,255,.55);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+.fsep{color:rgba(255,255,255,.3);font-size:13px}
+.finfo{margin-left:auto;color:rgba(255,255,255,.4);font-size:11px}
+.date-inp{height:32px;padding:0 10px;border:1px solid rgba(255,255,255,.18);border-radius:6px;font-size:12px;font-weight:600;color:#fff;background:rgba(255,255,255,.08);cursor:pointer;outline:none}
+.date-inp:focus{border-color:var(--accent)}
+.btn-reset{background:transparent;border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.6);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700;text-transform:uppercase;letter-spacing:.4px;transition:all .2s}
+.btn-reset:hover{background:rgba(255,255,255,.08);color:#fff}
+.compare-sel{height:32px;padding:0 10px;border:1px solid rgba(255,255,255,.18);border-radius:6px;font-size:12px;font-weight:600;color:#fff;background:rgba(255,255,255,.1);cursor:pointer;outline:none;-webkit-appearance:none}
+.compare-sel option{background:#123a5c;color:#fff}
+
+/* ── MULTI-SELECT ── */
+.ms-wrap{position:relative}
+.ms-btn{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#fff;padding:6px 28px 6px 12px;border-radius:6px;font-size:12px;cursor:pointer;white-space:nowrap;min-width:140px;text-align:left;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(255,255,255,.4)'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;transition:border-color .15s}
+.ms-btn:hover,.ms-btn.open{border-color:var(--accent)}
+.ms-btn.has-sel{background-color:rgba(34,211,238,.15);border-color:var(--accent);color:#67e8f9}
+.ms-panel{display:none;position:absolute;top:calc(100% + 6px);left:0;background:#123a5c;border:1px solid rgba(255,255,255,.18);border-radius:8px;min-width:240px;max-height:320px;overflow-y:auto;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.ms-panel.open{display:block}
+.ms-search{width:100%;background:rgba(255,255,255,.08);border:none;border-bottom:1px solid rgba(255,255,255,.1);color:#fff;padding:9px 12px;font-size:12px;outline:none}
+.ms-search::placeholder{color:rgba(255,255,255,.35)}
+.ms-actions{display:flex;border-bottom:1px solid rgba(255,255,255,.1)}
+.ms-actions button{flex:1;background:transparent;border:none;color:rgba(255,255,255,.5);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:7px;cursor:pointer;transition:all .15s}
+.ms-actions button:hover{color:#fff;background:rgba(255,255,255,.06)}
+.ms-item{display:flex;align-items:center;gap:9px;padding:7px 12px;cursor:pointer;transition:background .12s}
+.ms-item:hover{background:rgba(255,255,255,.07)}
+.ms-item input[type=checkbox]{accent-color:var(--accent);width:13px;height:13px;cursor:pointer;flex-shrink:0}
+.ms-item span{font-size:12px;color:rgba(255,255,255,.85);line-height:1.3}
+
+/* ── SIDEBAR ── */
+.app-shell{display:flex;flex:1;min-height:0}
+.sidebar{width:64px;background:var(--navy);border-right:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;align-items:center;padding:16px 0;gap:6px;position:sticky;top:68px;height:calc(100vh - 68px);overflow:hidden;transition:width .2s;z-index:90;flex-shrink:0}
+.sidebar.expanded{width:210px;align-items:flex-start}
+.sidebar-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer;width:40px;transition:all .2s;color:rgba(255,255,255,.45);text-decoration:none;white-space:nowrap;overflow:hidden;border:none;background:transparent;font-family:inherit}
+.sidebar.expanded .sidebar-item{width:186px}
+.sidebar-item:hover{background:rgba(255,255,255,.08);color:rgba(255,255,255,.85)}
+.sidebar-item.active{background:rgba(34,211,238,.15);color:#67e8f9;border:1px solid rgba(34,211,238,.3)}
+.sidebar-icon{font-size:18px;flex-shrink:0;width:20px;text-align:center}
+.sidebar-label{font-size:12px;font-weight:600;letter-spacing:.2px;opacity:0;transition:opacity .15s .05s}
+.sidebar.expanded .sidebar-label{opacity:1}
+.sidebar-soon{margin-top:10px;padding:8px 10px;font-size:10px;color:rgba(255,255,255,.25);text-align:center;line-height:1.4;display:none}
+.sidebar.expanded .sidebar-soon{display:block}
+.sidebar-toggle{margin-top:auto;color:rgba(255,255,255,.3);cursor:pointer;font-size:16px;padding:10px;border-radius:8px;border:none;background:transparent;transition:all .2s}
+.sidebar-toggle:hover{color:#fff;background:rgba(255,255,255,.08)}
+
+/* ── PANELS ── */
+.db-panel{display:none;flex:1;min-width:0;overflow-y:auto}
+.db-panel.active{display:block}
+
+/* ── MAIN / CARDS ── */
+.main{max-width:1440px;margin:0 auto;padding:24px 28px}
+.kpi{background:#fff;border-radius:var(--radius);padding:20px 22px;box-shadow:var(--shadow);border-top:3px solid var(--blue);position:relative;overflow:visible}
+.kpi::after{content:'';position:absolute;right:-20px;top:-20px;width:80px;height:80px;border-radius:50%;background:rgba(37,99,235,.05)}
+.kpi.teal{border-color:var(--teal)} .kpi.teal::after{background:rgba(14,147,168,.05)}
+.kpi.green{border-color:var(--green)} .kpi.green::after{background:rgba(15,165,114,.05)}
+.kpi.red{border-color:var(--red)} .kpi.red::after{background:rgba(220,38,38,.05)}
+.kpi.amber{border-color:var(--amber)} .kpi.amber::after{background:rgba(224,138,30,.05)}
+.kpi-lbl{font-size:10px;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.6px}
+.kpi-val{font-size:28px;font-weight:800;color:var(--navy);margin:7px 0 3px;line-height:1;letter-spacing:-.5px}
+.kpi-sub{font-size:11px;color:var(--gray-500)}
+.kpi-ico{position:absolute;right:18px;top:16px;font-size:22px;opacity:.15}
+.tip-ic{cursor:help;color:var(--gray-500);font-size:11px;position:relative;display:inline-block;text-transform:none;letter-spacing:normal;font-weight:400}
+.tip-ic.tip-ic-dark{color:rgba(255,255,255,.35)}
+.tip-ic::after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 10px);transform:translateX(-50%) translateY(4px);background:#0f2338;color:#eef3f9;padding:10px 13px;border-radius:8px;font-size:12px;font-weight:400;text-transform:none;letter-spacing:normal;white-space:normal;width:max-content;max-width:260px;line-height:1.5;box-shadow:0 10px 24px rgba(13,31,53,.35);z-index:80;pointer-events:none;opacity:0;visibility:hidden;transition:opacity .12s ease,transform .12s ease,visibility .12s}
+.tip-ic::before{content:'';position:absolute;left:50%;bottom:calc(100% + 4px);transform:translateX(-50%) translateY(4px);border:6px solid transparent;border-top-color:#0f2338;z-index:80;pointer-events:none;opacity:0;visibility:hidden;transition:opacity .12s ease,transform .12s ease,visibility .12s}
+.tip-ic:hover::after,.tip-ic:hover::before{opacity:1;visibility:visible;transform:translateX(-50%) translateY(0)}
+.row2{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
+.row3{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}
+.card{background:#fff;border-radius:var(--radius);padding:20px 22px;box-shadow:var(--shadow)}
+.ct{font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.6px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.chart-yr-sel{margin-left:auto;height:26px;padding:0 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:11px;font-weight:600;color:var(--gray-700);background:#fff;cursor:pointer;outline:none;text-transform:none;letter-spacing:normal}
+.ct::before{content:'';display:block;width:3px;height:14px;background:var(--accent);border-radius:2px}
+.chart-wrap{position:relative}
+
+/* ── TABLE ── */
+.tcard{background:#fff;border-radius:var(--radius);padding:20px 22px;box-shadow:var(--shadow);margin-bottom:24px}
+.thead-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px}
+.tcard-title{font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.6px;display:flex;align-items:center;gap:8px}
+.tcard-title::before{content:'';display:block;width:3px;height:14px;background:var(--accent);border-radius:2px}
+.thead-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tcnt{background:var(--gray-100);color:var(--gray-500);font-size:11px;font-weight:700;padding:3px 10px;border-radius:12px}
+.col-matchcode{display:none}
+.btn-open-qbo{display:inline-block;background:var(--teal);color:#fff;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap}
+.btn-open-qbo:hover{filter:brightness(1.1)}
+.btn-export{background:var(--blue);color:#fff;border:none;padding:7px 16px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.3px;transition:background .2s}
+.btn-export:hover{background:#1d4ed8}
+.search-box{background:var(--gray-50);border:1px solid var(--gray-200);color:var(--text);padding:6px 12px;border-radius:6px;font-size:12px;width:220px}
+.search-box:focus{outline:none;border-color:var(--blue)}
+.tbl-wrap{overflow-x:auto;max-height:520px;overflow-y:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{background:var(--gray-50);color:var(--gray-500);font-weight:700;padding:9px 12px;text-align:left;border-bottom:2px solid var(--gray-200);font-size:10px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;position:sticky;top:0;z-index:2;cursor:pointer;user-select:none}
+thead th:hover{background:var(--gray-100)}
+thead th.sort-asc::after{content:' ↑'}
+thead th.sort-desc::after{content:' ↓'}
+tbody tr{border-bottom:1px solid var(--gray-100);transition:background .12s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:#f0fbfd}
+tbody td{padding:9px 12px;color:var(--gray-700);vertical-align:middle}
+.td-vend{font-weight:600;color:var(--navy)}
+.td-val{font-weight:700;color:var(--navy);white-space:nowrap}
+.td-diff-bad{color:var(--red);font-weight:700}
+.td-diff-ok{color:var(--green);font-weight:700}
+.badge{display:inline-flex;align-items:center;gap:4px;border-radius:12px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap}
+.badge-matched{background:rgba(15,165,114,.12);color:#0b7a54}
+.badge-mismatch{background:rgba(224,138,30,.14);color:#a8620f}
+.badge-qbonly{background:rgba(220,38,38,.1);color:#b91c1c}
+.badge-stonly{background:rgba(37,99,235,.1);color:#1d4ed8}
+.badge-covered{background:rgba(15,165,114,.12);color:#0b7a54}
+.badge-missing{background:rgba(220,38,38,.1);color:#b91c1c}
+.tbl-sel{height:30px;padding:0 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:12px;font-weight:600;color:var(--gray-700);background:#fff;cursor:pointer;outline:none}
+.pg{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;flex-wrap:wrap}
+.pg-btn{background:var(--gray-50);border:1px solid var(--gray-200);color:var(--gray-700);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600;transition:all .15s}
+.pg-btn:hover,.pg-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.pg-info{font-size:12px;color:var(--gray-500);padding:0 6px}
+
+/* ── LOAD OVERLAY ── */
+.load-overlay{position:fixed;inset:0;background:rgba(10,37,64,.85);display:flex;align-items:center;justify-content:center;z-index:1000}
+.load-card{background:#fff;padding:32px 36px;border-radius:14px;text-align:center;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.load-spin{width:40px;height:40px;border:4px solid var(--gray-200);border-top-color:var(--teal);border-radius:50%;margin:0 auto 16px;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.load-step{font-weight:700;color:var(--navy);margin-bottom:4px;font-size:14px}
+.load-sub{color:var(--gray-500);font-size:12px}
+#load-timer{color:var(--gray-500);font-size:11px;margin-top:10px}
+
+@media print{
+  header .hdr-btn,.fbar,.sidebar,.sidebar-toggle,.pg,.search-box,.btn-export{display:none!important}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hdr-l">
+    <svg class="logo-svg" viewBox="0 0 190 48" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="24" cy="24" r="22" fill="#0a2540" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+      <path d="M9 17 Q24 8 39 17" stroke="#22d3ee" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+      <path d="M7 24 Q24 14 41 24" stroke="#5eead4" stroke-width="3.2" fill="none" stroke-linecap="round" opacity=".85"/>
+      <path d="M9 31 Q24 22 39 31" stroke="#a5f3fc" stroke-width="3.2" fill="none" stroke-linecap="round" opacity=".7"/>
+      <text x="54" y="21" font-family="'Segoe UI',system-ui,sans-serif" font-size="15.5" font-weight="800" fill="#ffffff" letter-spacing="-0.3">Coolbreeze</text>
+      <text x="54" y="35" font-family="'Segoe UI',system-ui,sans-serif" font-size="9" font-weight="600" fill="rgba(255,255,255,0.5)" letter-spacing="1.3">HEATING &amp; AIR CONDITIONING</text>
+    </svg>
+    <div class="hdr-div"></div>
+    <div class="hdr-t">
+      <h1 id="hdr-title">Accounting Reconciliation</h1>
+      <p>QuickBooks vs ServiceTitan Bills &middot; Updated live from Google Drive</p>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <span class="hdr-badge svc-badge">❄ HVAC Services</span>
+    <select class="compare-sel" id="reconViewSel" onchange="switchReconView(this.value)" title="Switch reconciliation view" style="height:30px;font-weight:700">
+      <option value="bills">📋 Bills Reconciliation</option>
+      <option value="membership">👥 Membership Reconciliation</option>
+    </select>
+    <span class="hdr-badge" id="lastUpdated">Loading…</span>
+    <button class="hdr-btn" onclick="softRefresh()" title="Re-fetch latest data without clearing cache">↺ Refresh</button>
+    <button class="hdr-btn hard" onclick="forceRefresh()" title="Clear cache and pull latest data from Google Drive">↺ Hard Refresh</button>
+  </div>
+</header>
+
+<div class="app-shell">
+
+<!-- ── SIDEBAR ──
+     Only one tab today. To add another later: copy the <div class="db-panel">
+     block below, give it a new id (db2, db3…), add a matching
+     <button class="sidebar-item" onclick="showDB(2)"> here, and register its
+     init/apply/render functions the way showDB() already dispatches for db1. -->
+<nav class="sidebar" id="sidebar">
+  <button class="sidebar-item active" id="nav-db1" onclick="showDB(1)" title="Accounting Reconciliation">
+    <span class="sidebar-icon">🧾</span>
+    <span class="sidebar-label">Reconciliation</span>
+  </button>
+  <div class="sidebar-soon">More tabs coming soon</div>
+  <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" title="Expand/Collapse">⇆</button>
+</nav>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- DASHBOARD 1: ACCOUNTING RECONCILIATION      -->
+<!-- ══════════════════════════════════════════ -->
+<div class="db-panel active" id="db1">
+<div id="viewBills">
+<div class="fbar">
+  <label>From</label>
+  <input type="date" id="dateFrom" class="date-inp" onchange="applyAll();applyVendorCoverage()">
+  <span class="fsep">&rarr;</span>
+  <label>To</label>
+  <input type="date" id="dateTo" class="date-inp" onchange="applyAll();applyVendorCoverage()">
+
+  <label>Vendor</label>
+  <div class="ms-wrap" id="vendMsWrap">
+    <button class="ms-btn" id="vendMsBtn" onclick="toggleVendMS(event)">All Vendors ▾</button>
+    <div class="ms-panel" id="vendMsPanel">
+      <input class="ms-search" type="text" placeholder="Search vendors…" oninput="filterVendMSItems(this.value)">
+      <div class="ms-actions"><button onclick="selectAllVendMS()">Select All</button><button onclick="clearVendMS()">Clear</button></div>
+      <div id="vendMsItems"></div>
+    </div>
+  </div>
+
+  <label>Item Split Acct</label>
+  <div class="ms-wrap" id="acctMsWrap">
+    <button class="ms-btn" id="acctMsBtn" onclick="toggleAcctMS(event)">All Accounts ▾</button>
+    <div class="ms-panel" id="acctMsPanel">
+      <input class="ms-search" type="text" placeholder="Search accounts…" oninput="filterAcctMSItems(this.value)">
+      <div class="ms-actions"><button onclick="selectAllAcctMS()">Select All</button><button onclick="clearAcctMS()">Clear</button></div>
+      <div id="acctMsItems"></div>
+    </div>
+  </div>
+
+  <label>Status</label>
+  <select class="compare-sel" id="statusSel" onchange="applyAll()">
+    <option value="all">All Statuses</option>
+    <option value="matched">✓ Matched</option>
+    <option value="mismatch">⚠ Amount Mismatch</option>
+    <option value="qb_only">✕ Missing in ServiceTitan</option>
+    <option value="st_only">✕ Missing in QuickBooks</option>
+  </select>
+
+  <button class="btn-reset" onclick="resetFilters()">Reset</button>
+  <span class="finfo" id="finfo">Loading data…</span>
+</div>
+
+<div class="main">
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px">
+    <div class="kpi"><div class="kpi-ico">📗</div><div class="kpi-lbl">QuickBooks Total <span class="tip-ic" data-tip="Sum of bill amounts from QuickBooks in the current filtered date range.">ⓘ</span></div><div class="kpi-val" id="kv-qb">—</div><div class="kpi-sub" id="ks-qb">bills</div></div>
+    <div class="kpi teal"><div class="kpi-ico">🔧</div><div class="kpi-lbl">ServiceTitan Total <span class="tip-ic" data-tip="Sum of bill amounts from ServiceTitan in the current filtered date range.">ⓘ</span></div><div class="kpi-val" id="kv-st">—</div><div class="kpi-sub" id="ks-st">bills</div></div>
+    <div class="kpi green"><div class="kpi-ico">✅</div><div class="kpi-lbl">Matched <span class="tip-ic" data-tip="Bills found in both systems with the same bill/reference number (or the same vendor, amount, and a nearby date) and equal amounts.">ⓘ</span></div><div class="kpi-val" id="kv-matched">—</div><div class="kpi-sub" id="ks-matched">bills</div></div>
+    <div class="kpi red"><div class="kpi-ico">⚠</div><div class="kpi-lbl">Discrepancies <span class="tip-ic" data-tip="Bills that are missing from one system, or matched but with a different dollar amount.">ⓘ</span></div><div class="kpi-val" id="kv-disc">—</div><div class="kpi-sub" id="ks-disc">at risk</div></div>
+    <div class="kpi amber"><div class="kpi-ico">Δ</div><div class="kpi-lbl">Net Difference <span class="tip-ic" data-tip="QuickBooks Total minus ServiceTitan Total for the current filtered range.">ⓘ</span></div><div class="kpi-val" id="kv-diff">—</div><div class="kpi-sub">QB − ST</div></div>
+  </div>
+
+  <div class="row2">
+    <div class="card"><div class="ct"><span>QuickBooks vs ServiceTitan Totals Over Time</span><select class="chart-yr-sel" id="trendYearSel" onchange="renderCharts()"></select></div><div class="chart-wrap" style="height:250px"><canvas id="trendChart"></canvas></div></div>
+    <div class="card"><div class="ct">Bills by Match Status</div><div class="chart-wrap" style="height:250px"><canvas id="statusChart"></canvas></div></div>
+  </div>
+  <div style="margin-bottom:20px">
+    <div class="card"><div class="ct">Top Vendors by Discrepancy Amount</div><div class="chart-wrap" style="height:240px"><canvas id="vendorChart"></canvas></div></div>
+  </div>
+  <div style="margin-bottom:20px">
+    <div class="card"><div class="ct">QuickBooks Total by Item Split Account <span class="tip-ic" data-tip="Sum of QuickBooks bill amounts in the current filtered range, grouped by the Item split account column.">ⓘ</span></div><div class="chart-wrap" style="height:280px"><canvas id="itemAccountChart"></canvas></div></div>
+  </div>
+
+  <div class="tcard">
+    <div class="thead-row">
+      <div class="tcard-title">Bill Reconciliation — Full Audit View</div>
+      <div class="thead-right">
+        <input class="search-box" type="text" id="searchBox" placeholder="Search vendor or bill #…" oninput="applyAll()">
+        <span class="tcnt" id="tcount">— records</span>
+        <button class="btn-export" onclick="exportXLSX()">⬇ Export Excel</button>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th onclick="sortBy('status')" id="th-status">Status</th>
+          <th onclick="sortBy('vendor')" id="th-vendor">Vendor</th>
+          <th onclick="sortBy('billNumber')" id="th-billNumber">Bill / Ref #</th>
+          <th class="col-matchcode" onclick="sortBy('matchCodeDisplay')" id="th-matchCodeDisplay" title="Amount + Month + Vendor — the same key used to match bills in the Excel reconciliation">Matching Code</th>
+          <th onclick="sortBy('qbAmount')" id="th-qbAmount">QB Amount</th>
+          <th onclick="sortBy('qbDate')" id="th-qbDate">QB Date</th>
+          <th onclick="sortBy('stAmount')" id="th-stAmount">ST Amount</th>
+          <th onclick="sortBy('stDate')" id="th-stDate">ST Date</th>
+          <th onclick="sortBy('diff')" id="th-diff">Difference</th>
+          <th>QuickBooks</th>
+        </tr></thead>
+        <tbody id="tBody"></tbody>
+      </table>
+    </div>
+    <div id="tfoot-totals" style="border-top:2px solid var(--gray-200);background:var(--gray-50);border-radius:0 0 8px 8px;padding:10px 18px;display:none;align-items:center;gap:32px;font-size:13px;font-weight:600">
+      <span style="color:var(--gray-500)">All filtered records —</span>
+      <span style="color:var(--blue);font-size:14px;font-weight:700" id="tfoot-qb">—</span>
+      <span style="color:var(--teal);font-size:14px;font-weight:700" id="tfoot-st">—</span>
+      <span style="color:var(--red);font-size:14px;font-weight:700" id="tfoot-disc">—</span>
+    </div>
+    <div class="pg" id="pagination"></div>
+  </div>
+
+  <div class="tcard">
+    <div class="thead-row">
+      <div class="tcard-title">Vendor Invoice Coverage <span class="tip-ic" data-tip="Every invoice/PO from the Vendor Transactions source-of-truth sheet, checked against whether a matching Bill/Ref # was found in the QuickBooks and ServiceTitan bill reports.">ⓘ</span></div>
+      <div class="thead-right">
+        <input class="search-box" type="text" id="vcSearchBox" placeholder="Search vendor, invoice #, or PO #…" oninput="applyVendorCoverage()">
+        <select class="tbl-sel" id="vcStatusSel" onchange="applyVendorCoverage()">
+          <option value="all">All</option>
+          <option value="missing_qb">Missing from QuickBooks</option>
+          <option value="missing_st">Missing from ServiceTitan</option>
+          <option value="missing_both">Missing from Both</option>
+          <option value="in_both">In Both</option>
+        </select>
+        <span class="tcnt" id="vcCount">— records</span>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Vendor</th>
+          <th>Invoice #</th>
+          <th>PO #</th>
+          <th>Amount</th>
+          <th>Date</th>
+          <th>In QuickBooks</th>
+          <th>In ServiceTitan</th>
+        </tr></thead>
+        <tbody id="vcBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</div><!-- /viewBills -->
+
+<div id="viewMembership" style="display:none">
+<div class="main">
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px">
+    <div class="kpi"><div class="kpi-ico">📗</div><div class="kpi-lbl">QuickBooks Balance <span class="tip-ic" data-tip="Sum of QuickBooks Membership deferred-balance ledger amounts per customer, in the current filter.">ⓘ</span></div><div class="kpi-val" id="mkv-qb">—</div><div class="kpi-sub" id="mks-qb">customers</div></div>
+    <div class="kpi teal"><div class="kpi-ico">🔧</div><div class="kpi-lbl">ServiceTitan Balance <span class="tip-ic" data-tip="Sum of ServiceTitan Deferred Revenue Balance per customer (across all their memberships), in the current filter.">ⓘ</span></div><div class="kpi-val" id="mkv-st">—</div><div class="kpi-sub" id="mks-st">customers</div></div>
+    <div class="kpi green"><div class="kpi-ico">✅</div><div class="kpi-lbl">Matched <span class="tip-ic" data-tip="Customers whose QuickBooks and ServiceTitan membership balances agree within 1 cent.">ⓘ</span></div><div class="kpi-val" id="mkv-matched">—</div><div class="kpi-sub" id="mks-matched">customers</div></div>
+    <div class="kpi red"><div class="kpi-ico">⚠</div><div class="kpi-lbl">Discrepancies <span class="tip-ic" data-tip="Customers missing from one system, or whose balances don't match between the two.">ⓘ</span></div><div class="kpi-val" id="mkv-disc">—</div><div class="kpi-sub" id="mks-disc">at risk</div></div>
+    <div class="kpi amber"><div class="kpi-ico">Δ</div><div class="kpi-lbl">Net Difference <span class="tip-ic" data-tip="QuickBooks Balance minus ServiceTitan Balance for the current filter.">ⓘ</span></div><div class="kpi-val" id="mkv-diff">—</div><div class="kpi-sub">QB − ST</div></div>
+  </div>
+
+  <div style="margin-bottom:20px">
+    <div class="card"><div class="ct">Top Customers by Membership Balance Discrepancy</div><div class="chart-wrap" style="height:280px"><canvas id="membershipChart"></canvas></div></div>
+  </div>
+
+  <div class="tcard">
+    <div class="thead-row">
+      <div class="tcard-title">Membership Balance Reconciliation <span class="tip-ic" data-tip="QuickBooks Membership Balance (summed per customer from the deferred-balance ledger) vs. ServiceTitan Membership Balance (summed Deferred Revenue Balance per customer across memberships), matched by customer name only.">ⓘ</span></div>
+      <div class="thead-right">
+        <input class="search-box" type="text" id="memSearchBox" placeholder="Search customer…" oninput="applyMembership()">
+        <select class="tbl-sel" id="memStatusSel" onchange="applyMembership()">
+          <option value="all">All Statuses</option>
+          <option value="matched">✓ Matched</option>
+          <option value="mismatch">⚠ Amount Mismatch</option>
+          <option value="qb_only">✕ Missing in ServiceTitan</option>
+          <option value="st_only">✕ Missing in QuickBooks</option>
+        </select>
+        <span class="tcnt" id="memCount">— records</span>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Status</th>
+          <th>Customer</th>
+          <th>QB Balance</th>
+          <th>ST Balance</th>
+          <th>Difference</th>
+        </tr></thead>
+        <tbody id="memBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</div><!-- /viewMembership -->
+</div><!-- /db1 -->
+
+</div><!-- /app-shell -->
+
+<div class="load-overlay" id="loadOverlay">
+  <div class="load-card" id="loadCard">
+    <div class="load-spin"></div>
+    <div class="load-step" id="load-step">Connecting to Google Drive…</div>
+    <div class="load-sub" id="load-sub">Fetching QuickBooks &amp; ServiceTitan bill reports</div>
+    <div id="load-timer">0s elapsed</div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════
+// CONFIG — adjust these to match the real Coolbreeze Apps Script contract
+// ══════════════════════════════════════════════════════════════════════════
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxROkWLe7uY8peQzXTCxLXkykB-GjX6_fBUAu4vhtLWC-FasTeuVi5i8jEFeaD6d1NH/exec';
+
+// The two report keys requested via GAS_URL+'?report='+KEY, same convention
+// as Sunline's '?report=estimates' / '?report=jobs'. Change these if the
+// Apps Script's doGet(e) branches on different key names.
+const REPORT_KEY_QB = 'quickbooksBills';
+const REPORT_KEY_ST = 'servicetitanBills';
+const REPORT_KEY_VENDOR_TXNS = 'vendorTransactions';
+const REPORT_KEY_QB_MEMBERSHIP = 'quickbooksMembership';
+const REPORT_KEY_ST_MEMBERSHIP = 'servicetitanMembership';
+
+// Matching tolerances for the reconciliation engine (see buildReconciliation).
+const MATCH_DATE_TOLERANCE_DAYS = 3;   // fuzzy vendor+amount+date match window
+const AMOUNT_TOLERANCE = 0.01;         // amounts within 1 cent count as equal
+
+const CACHE_TTL = 15 * 60 * 1000; // 15 min
+
+// Candidate header names (case/space/underscore-insensitive) normalizeRow()
+// will search for, in priority order — same "col()" fuzzy-header pattern
+// Sunline's dashboard uses for ServiceTitan exports.
+const FIELD_ALIASES = {
+  vendor:     ['vendor','vendor name','payee','supplier','customer','name'],
+  billNumber: ['bill number','bill #','billno','bill no','ref number','reference number','reference #','invoice number','invoice #','invoice no','doc number','po number','po #','number'],
+  amount:     ['amount','total','bill amount','total amount','balance','amount due'],
+  date:       ['date','bill date','txn date','transaction date','invoice date','created date'],
+};
+
+// QuickBooks Online's internal transaction id (numeric), used to deep-link
+// a "Missing in ST" row straight to the bill in QBO:
+// https://qbo.intuit.com/app/bill?txnId=<id>. Not a generic FIELD_ALIASES
+// entry because it's QuickBooks-only and has nothing to do with row
+// matching — it's purely for the "Open" link in the audit table.
+const TXN_ID_ALIASES=['transaction id','txn id','transactionid','qbo transaction id','qb transaction id'];
+
+// QuickBooks' expense-category column for a bill line — used to build the
+// "QuickBooks by Item Split Account" chart (a consolidated total per
+// account across all QB bills currently in view, not just mismatches).
+const ITEM_SPLIT_ACCOUNT_ALIASES=['item split account','split account','item account','account full name','account'];
+
+// Vendor Transactions source-of-truth sheet (Code.gs's VENDOR_TRANSACTIONS_SOURCE,
+// apiKey "vendorTransactions") — one tab per vendor, columns like
+// INVOICE_NUMBER / INVOICE_DATE / PO_NUMBER / TOTAL_DUE (some tabs also
+// have a Job Name column; column order varies by tab, hence alias-based
+// lookup same as everything else here). The Vendor column is set by
+// Code.gs itself from the tab name, so it's usually literally "Vendor".
+const VENDOR_TXN_FIELD_ALIASES = {
+  vendor:        ['vendor'],
+  invoiceNumber: ['invoice number','invoice #','invoice no','invoiceno'],
+  poNumber:      ['po number','po #','po no','pono'],
+  amount:        ['total due','amount','total','amount due'],
+  date:          ['invoice date','date'],
+};
+
+// Membership Balance dimension. QuickBooks Membership Balance (apiKey
+// quickbooksMembership) is a per-transaction deferred-balance LEDGER
+// (Invoice/Credit Memo/Journal Entry rows) — each customer's current
+// balance is the SUM of their Amount entries, not a single column.
+// ServiceTitan Membership Balance (apiKey servicetitanMembership, itself
+// already a merge of two source exports) is a per-MEMBERSHIP current-state
+// SNAPSHOT — a customer with more than one membership needs their Deferred
+// Revenue Balance summed across those rows for the customer-level total.
+const QB_MEMBERSHIP_FIELD_ALIASES = {
+  customer: ['customer','customer name','name'],
+  amount:   ['amount'],
+};
+const ST_MEMBERSHIP_FIELD_ALIASES = {
+  customer: ['customer name','customer'],
+  balance:  ['deferred revenue balance','deferred balance','balance'],
+};
+
+// ══════════════════════════════════════════════════════════════════════════
+// DATA FETCH — ported from Sunline's fetchReport()/fetchReportWithRetry()
+// ══════════════════════════════════════════════════════════════════════════
+function base64ToBytes(b64){
+  const bin=atob(b64.replace(/[^A-Za-z0-9+/=]/g,''));
+  const bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  return bytes;
+}
+
+async function fetchReport(report){
+  if(typeof google!=='undefined'&&google.script&&google.script.run){
+    const jsonStr=await new Promise((resolve,reject)=>{
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).getReportData(report);
+    });
+    if(!jsonStr)throw new Error('Empty response for '+report);
+    const data=JSON.parse(jsonStr);
+    if(data&&data.error)throw new Error('GAS error: '+data.error);
+    return data;
+  }
+  let resp;
+  try{
+    resp=await fetch(GAS_URL+'?report='+report+'&_t='+Date.now(),{redirect:'follow'});
+  }catch(netErr){
+    throw new Error(`Network error (CORS or blocked): ${netErr.message}. Open the dashboard from a web server (GitHub Pages / Google Sites), not a local file://.`);
+  }
+  if(!resp.ok)throw new Error(`HTTP ${resp.status} for report=${report}`);
+  const text=await resp.text();
+  if(text.trim().startsWith('<!DOCTYPE')||text.trim().startsWith('<html')){
+    throw new Error(`Got an HTML page instead of data for report=${report}. In Apps Script, doGet(e) needs to check e.parameter.report and return JSON (see the CONFIG comment at the top of this file) — right now it looks like it's always returning the dashboard's own HTML page.`);
+  }
+  try{
+    const json=JSON.parse(text);
+    if(json&&json.error)throw new Error('GAS error for "'+report+'": '+json.error);
+    if(json.values&&Array.isArray(json.values))return json.values;
+    if(json.data&&Array.isArray(json.data))return json.data;
+    if(Array.isArray(json))return json;
+  }catch(e){if(e.message.includes('GAS error'))throw e;/* not JSON — fall through to XLSX */}
+  const bytes=base64ToBytes(text.trim());
+  if(bytes[0]===0x50&&bytes[1]===0x4B){
+    const wb=XLSX.read(bytes,{type:'array',cellDates:true});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
+  }
+  const str=new TextDecoder('utf-8').decode(bytes);
+  const wb=XLSX.read(str,{type:'string'});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:false});
+}
+
+async function fetchReportWithRetry(report,retries=3,delayMs=1500){
+  let lastErr;
+  for(let attempt=0;attempt<=retries;attempt++){
+    try{ return await fetchReport(report); }
+    catch(e){
+      lastErr=e;
+      const isTransient=/lock timeout/i.test(e.message)||/another process/i.test(e.message)||/service invoked too many times|rate limit/i.test(e.message);
+      if(attempt<retries&&isTransient){
+        await new Promise(r=>setTimeout(r,delayMs));
+        delayMs*=2;
+        continue;
+      }
+      throw lastErr;
+    }
+  }
+  throw lastErr;
+}
+
+function getCached(report){
+  try{
+    const raw=localStorage.getItem('cb_'+report);
+    if(!raw)return null;
+    const d=JSON.parse(raw);
+    if(Date.now()-d.ts>CACHE_TTL)return null;
+    return d.data;
+  }catch(e){return null;}
+}
+function setCache(report,data){
+  try{localStorage.setItem('cb_'+report,JSON.stringify({ts:Date.now(),data}));}catch(e){}
+}
+function clearAllCache(){
+  [REPORT_KEY_QB,REPORT_KEY_ST,REPORT_KEY_VENDOR_TXNS,REPORT_KEY_QB_MEMBERSHIP,REPORT_KEY_ST_MEMBERSHIP].forEach(r=>{try{localStorage.removeItem('cb_'+r);}catch(e){}});
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// NORMALIZATION — turn raw rows (array-of-arrays w/ header row, OR an array
+// of objects) into a consistent {vendor, billNumber, amount, date} shape.
+// ══════════════════════════════════════════════════════════════════════════
+function toObjects(rows){
+  if(!rows||!rows.length)return [];
+  if(Array.isArray(rows[0])){
+    const headers=rows[0].map(h=>String(h==null?'':h).trim());
+    return rows.slice(1)
+      .filter(r=>r&&r.some(c=>c!==null&&c!==''&&c!==undefined))
+      .map(r=>{ const obj={}; headers.forEach((h,i)=>obj[h]=r[i]); return obj; });
+  }
+  return rows;
+}
+
+function normKey(s){ return String(s==null?'':s).replace(/[\s_]+/g,' ').trim().toLowerCase(); }
+
+function pickField(obj,candidates){
+  const keys=Object.keys(obj);
+  const normed=keys.map(k=>({k,n:normKey(k)}));
+  for(const c of candidates){
+    const hit=normed.find(x=>x.n===c);
+    if(hit)return obj[hit.k];
+  }
+  for(const c of candidates){
+    const hit=normed.find(x=>x.n.includes(c));
+    if(hit)return obj[hit.k];
+  }
+  return undefined;
+}
+
+function sf(v){ // safe float — handles "$1,234.56", "(500.00)" as -500, etc.
+  if(v===null||v===undefined||v==='')return 0;
+  if(typeof v==='number')return v;
+  let s=v.toString().trim();
+  const neg=/^\(.*\)$/.test(s);
+  s=s.replace(/[$,\s()]/g,'');
+  const n=parseFloat(s);
+  if(isNaN(n))return 0;
+  return neg?-n:n;
+}
+
+function sd(v){ // safe date — Date object, ISO string, "M/D/YYYY", or Excel serial
+  if(!v&&v!==0)return null;
+  if(v instanceof Date)return isNaN(v.getTime())?null:v;
+  if(typeof v==='number'&&v>20000&&v<80000)return new Date((v-25569)*86400000);
+  if(typeof v==='string'&&v.trim()){ const d=new Date(v.trim()); return isNaN(d.getTime())?null:d; }
+  return null;
+}
+
+function vendorKey(v){ return String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+function isoDay(d){ return d?d.toISOString().slice(0,10):null; }
+
+function monthNameOf(d){ return d?d.toLocaleDateString('en-US',{month:'long'}):''; }
+function codeClean(s){ return String(s==null?'':s).replace(/[^a-zA-Z0-9]/g,''); }
+// The "matching code" mirrors the manual Excel reconciliation process:
+// TOTAL_DUE + Month + Vendor, e.g. "389.24MayLennox". `key` is a
+// normalized (case/punctuation-insensitive, year-qualified) version used
+// to actually match QB <-> ST rows; `display` is the human-readable
+// version shown in the table so it can be eyeballed the same way the
+// Excel MonthCode column is. (Year is included in `key` — unlike the
+// original Excel formula — so a January 2026 bill can't collide with an
+// identical-amount January 2027 bill from the same vendor.)
+function buildMatchCode(amount,date,vendor){
+  const mon=monthNameOf(date), yr=date?date.getFullYear():'';
+  return {
+    key:amount.toFixed(2)+'|'+mon+yr+'|'+vendorKey(vendor),
+    display:amount.toFixed(2)+mon+yr+codeClean(vendor)
+  };
+}
+
+// Drops report-footer rows (a trailing "TOTAL"/"Grand Total"/"Subtotal"
+// line) that slip through as if they were a real vendor row — these show
+// up because such a row still has 2+ populated cells (e.g. a label in the
+// vendor column + the grand-total figure in the amount column), so the
+// generic row-cleanup in Code.gs can't distinguish it from real data.
+const JUNK_VENDOR_RE=/^(grand\s+)?(sub)?total$/i;
+function normalizeRows(rawRows,source){
+  const objs=toObjects(rawRows);
+  const unmapped=new Set();
+  const isST=source==='ServiceTitan';
+  const out=objs.map((obj,i)=>{
+    const vendorRaw=pickField(obj,FIELD_ALIASES.vendor);
+    const billRaw=pickField(obj,FIELD_ALIASES.billNumber);
+    let amountRaw=pickField(obj,FIELD_ALIASES.amount);
+    let dateRaw=pickField(obj,FIELD_ALIASES.date);
+
+    // ServiceTitan-specific rules (raw export quirks, not generic
+    // FIELD_ALIASES behavior — QuickBooks rows are untouched):
+    // - "Return" transactions carry a positive Total in the ST export;
+    //   flip it negative so it nets against Bills correctly, the same
+    //   way a vendor credit works on the QuickBooks side.
+    // - Always use "Date Created" for the date, not "Date"/"Date
+    //   Billed" — Date Billed is blank on Returns (they're never
+    //   billed), which would otherwise drop those rows out of the
+    //   month-based matching code.
+    if(isST){
+      const txnType=pickField(obj,['transaction type']);
+      if(String(txnType||'').trim().toLowerCase()==='return'
+         &&amountRaw!==undefined&&amountRaw!==null&&amountRaw!==''){
+        amountRaw=-Math.abs(sf(amountRaw));
+      }
+      const dateCreatedRaw=pickField(obj,['date created']);
+      if(dateCreatedRaw!==undefined)dateRaw=dateCreatedRaw;
+    }
+
+    if(vendorRaw===undefined)unmapped.add('vendor');
+    if(amountRaw===undefined)unmapped.add('amount');
+    if(dateRaw===undefined)unmapped.add('date');
+    const vendor=String(vendorRaw||'').trim()||'(Unknown Vendor)';
+    const date=sd(dateRaw);
+    const amount=sf(amountRaw);
+    const code=buildMatchCode(amount,date,vendor);
+    const txnIdRaw=pickField(obj,TXN_ID_ALIASES);
+    const itemSplitAccountRaw=isST?undefined:pickField(obj,ITEM_SPLIT_ACCOUNT_ALIASES);
+    return {
+      _i:i, source,
+      vendor, vendorK:vendorKey(vendor),
+      billNumber:String(billRaw==null?'':billRaw).trim(),
+      amount,
+      date, dateISO:isoDay(date),
+      matchCode:code.key, matchCodeDisplay:code.display,
+      txnId:txnIdRaw!=null&&txnIdRaw!==''?String(txnIdRaw).trim():'',
+      itemSplitAccount:itemSplitAccountRaw!=null&&itemSplitAccountRaw!==''?String(itemSplitAccountRaw).trim():'',
+      raw:obj
+    };
+  }).filter(r=>(r.amount!==0||r.billNumber||r.vendor!=='(Unknown Vendor)')&&!JUNK_VENDOR_RE.test(r.vendor.trim()));
+  if(unmapped.size)console.warn('[Coolbreeze] '+source+': could not confidently map columns for: '+[...unmapped].join(', ')+'. Extend FIELD_ALIASES at the top of the script if these look wrong. Detected headers:',objs[0]?Object.keys(objs[0]):[]);
+  if(source==='QuickBooks'&&out.length&&!out.some(r=>r.txnId))console.warn('[Coolbreeze] QuickBooks: no "Transaction ID" column found — the Open-in-QuickBooks link on "Missing in ST" rows will be hidden. Detected headers:',objs[0]?Object.keys(objs[0]):[]);
+  return out;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// RECONCILIATION ENGINE
+// Pass 1: exact bill/reference-number match between QB and ST.
+// Pass 2: exact "matching code" match — TOTAL_DUE + Month + Vendor, the
+//         same key used in the manual Excel reconciliation — for anything
+//         left, since QB bill numbers and ST PO numbers use unrelated
+//         numbering schemes and pass 1 rarely fires in practice.
+// Pass 3: for anything still left, fuzzy match by vendor + amount (within
+//         2%) + date (within MATCH_DATE_TOLERANCE_DAYS) as a final safety
+//         net (e.g. an invoice dated right at a month boundary).
+// Anything still unmatched is "only in QuickBooks" / "only in ServiceTitan".
+// A matched pair whose amounts differ by more than AMOUNT_TOLERANCE is
+// flagged "mismatch" instead of "matched".
+// ══════════════════════════════════════════════════════════════════════════
+function round2(n){ return Math.round(n*100)/100; }
+
+function makeRow(status,qrow,srow){
+  const qbAmount=qrow?qrow.amount:null, stAmount=srow?srow.amount:null;
+  const diff=round2((qbAmount||0)-(stAmount||0));
+  return{
+    status,
+    vendor:(qrow&&qrow.vendor)||(srow&&srow.vendor)||'(Unknown Vendor)',
+    billNumber:(qrow&&qrow.billNumber)||(srow&&srow.billNumber)||'',
+    matchCode:(qrow&&qrow.matchCode)||(srow&&srow.matchCode)||'',
+    matchCodeDisplay:(qrow&&qrow.matchCodeDisplay)||(srow&&srow.matchCodeDisplay)||'',
+    qbTxnId:(qrow&&qrow.txnId)||'',
+    qbItemSplitAccount:(qrow&&qrow.itemSplitAccount)||'',
+    qbAmount, qbDate:qrow?qrow.date:null, qbDateISO:qrow?qrow.dateISO:null,
+    stAmount, stDate:srow?srow.date:null, stDateISO:srow?srow.dateISO:null,
+    diff,
+    displayDate:(qrow&&qrow.date)||(srow&&srow.date)||null,
+    qbRaw:qrow?qrow.raw:null, stRaw:srow?srow.raw:null
+  };
+}
+
+function buildReconciliation(qbRaw,stRaw){
+  const qb=normalizeRows(qbRaw,'QuickBooks');
+  const st=normalizeRows(stRaw,'ServiceTitan');
+  const qbUsed=new Array(qb.length).fill(false);
+  const stUsed=new Array(st.length).fill(false);
+  const results=[];
+
+  // Pass 1 — exact bill/reference number
+  const stByRef=new Map();
+  st.forEach((row,i)=>{
+    if(!row.billNumber)return;
+    const key=row.billNumber.toLowerCase();
+    if(!stByRef.has(key))stByRef.set(key,[]);
+    stByRef.get(key).push(i);
+  });
+  qb.forEach((qrow,qi)=>{
+    if(!qrow.billNumber)return;
+    const key=qrow.billNumber.toLowerCase();
+    const candidates=stByRef.get(key)||[];
+    const si=candidates.find(idx=>!stUsed[idx]);
+    if(si!==undefined){
+      qbUsed[qi]=true; stUsed[si]=true;
+      const srow=st[si];
+      const diff=Math.abs(round2(qrow.amount-srow.amount));
+      results.push(makeRow(diff<=AMOUNT_TOLERANCE?'matched':'mismatch',qrow,srow));
+    }
+  });
+
+  // Pass 2 — exact "matching code" (TOTAL_DUE + Month + Vendor), same
+  // key as the manual Excel reconciliation. Amount is baked into the
+  // code, so any match found here is exact -> always 'matched'.
+  const stByCode=new Map();
+  st.forEach((row,i)=>{
+    if(stUsed[i]||!row.matchCode)return;
+    if(!stByCode.has(row.matchCode))stByCode.set(row.matchCode,[]);
+    stByCode.get(row.matchCode).push(i);
+  });
+  qb.forEach((qrow,qi)=>{
+    if(qbUsed[qi]||!qrow.matchCode)return;
+    const candidates=stByCode.get(qrow.matchCode)||[];
+    const si=candidates.find(idx=>!stUsed[idx]);
+    if(si!==undefined){
+      qbUsed[qi]=true; stUsed[si]=true;
+      results.push(makeRow('matched',qrow,st[si]));
+    }
+  });
+
+  // Pass 3 — fuzzy: same vendor, close amount, nearby date
+  st.forEach((srow,si)=>{
+    if(stUsed[si])return;
+    let bestQi=-1, bestScore=Infinity;
+    qb.forEach((qrow,qi)=>{
+      if(qbUsed[qi])return;
+      if(qrow.vendorK!==srow.vendorK||!qrow.vendorK)return;
+      const amtDiff=Math.abs(qrow.amount-srow.amount);
+      const amtBand=Math.max(AMOUNT_TOLERANCE, srow.amount*0.02+0.01);
+      if(amtDiff>amtBand)return;
+      let dayDiff=999;
+      if(qrow.date&&srow.date)dayDiff=Math.abs((qrow.date-srow.date)/86400000);
+      if(dayDiff>MATCH_DATE_TOLERANCE_DAYS)return;
+      const score=amtDiff*10+dayDiff;
+      if(score<bestScore){bestScore=score;bestQi=qi;}
+    });
+    if(bestQi>-1){
+      qbUsed[bestQi]=true; stUsed[si]=true;
+      const qrow=qb[bestQi];
+      const diff=Math.abs(round2(qrow.amount-srow.amount));
+      results.push(makeRow(diff<=AMOUNT_TOLERANCE?'matched':'mismatch',qrow,srow));
+    }
+  });
+
+  qb.forEach((qrow,qi)=>{ if(!qbUsed[qi])results.push(makeRow('qb_only',qrow,null)); });
+  st.forEach((srow,si)=>{ if(!stUsed[si])results.push(makeRow('st_only',null,srow)); });
+
+  return results;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// VENDOR INVOICE COVERAGE — third reconciliation dimension. The Vendor
+// Transactions sheet is the source of truth for what vendors actually
+// invoiced; for each of those invoices/POs we check whether a bill with
+// the same Bill/Ref # (invoice # or PO #) shows up in the QuickBooks and
+// ServiceTitan bill reports — reusing the same billNumber field those two
+// reports already normalize to (see FIELD_ALIASES.billNumber, which
+// already includes "invoice number" and "po number").
+// ══════════════════════════════════════════════════════════════════════════
+function normalizeVendorTxnRows(rawRows){
+  const objs=toObjects(rawRows);
+  const unmapped=new Set();
+  const out=objs.map((obj,i)=>{
+    const vendorRaw=pickField(obj,VENDOR_TXN_FIELD_ALIASES.vendor);
+    const invoiceRaw=pickField(obj,VENDOR_TXN_FIELD_ALIASES.invoiceNumber);
+    const poRaw=pickField(obj,VENDOR_TXN_FIELD_ALIASES.poNumber);
+    const amountRaw=pickField(obj,VENDOR_TXN_FIELD_ALIASES.amount);
+    const dateRaw=pickField(obj,VENDOR_TXN_FIELD_ALIASES.date);
+    if(vendorRaw===undefined)unmapped.add('vendor');
+    if(amountRaw===undefined)unmapped.add('amount');
+    const vendor=String(vendorRaw||'').trim()||'(Unknown Vendor)';
+    const invoiceNumber=String(invoiceRaw==null?'':invoiceRaw).trim();
+    const poNumber=String(poRaw==null?'':poRaw).trim();
+    const amount=sf(amountRaw);
+    const date=sd(dateRaw);
+    return {
+      _i:i, vendor, vendorK:vendorKey(vendor),
+      invoiceNumber, poNumber, amount,
+      date, dateISO:isoDay(date),
+      raw:obj
+    };
+  }).filter(r=>r.invoiceNumber||r.poNumber||r.amount!==0);
+  if(unmapped.size)console.warn('[Coolbreeze] Vendor Transactions: could not confidently map columns for: '+[...unmapped].join(', ')+'. Extend VENDOR_TXN_FIELD_ALIASES at the top of the script if these look wrong. Detected headers:',objs[0]?Object.keys(objs[0]):[]);
+  return out;
+}
+
+function buildVendorCoverage(vendorRaw,qbRaw,stRaw){
+  const vendorRows=normalizeVendorTxnRows(vendorRaw||[]);
+  // Reuses the same normalizeRows() as the main reconciliation — QB/ST
+  // rows are re-normalized independently here rather than threaded
+  // through from buildReconciliation(), keeping this dimension isolated
+  // (a change here can't accidentally affect bill matching, or vice versa).
+  const qb=normalizeRows(qbRaw||[],'QuickBooks');
+  const st=normalizeRows(stRaw||[],'ServiceTitan');
+  const qbRefs=new Set(qb.filter(r=>r.billNumber).map(r=>r.billNumber.toLowerCase()));
+  const stRefs=new Set(st.filter(r=>r.billNumber).map(r=>r.billNumber.toLowerCase()));
+  const hasRef=(refs,v)=>(v.invoiceNumber&&refs.has(v.invoiceNumber.toLowerCase()))||(v.poNumber&&refs.has(v.poNumber.toLowerCase()));
+  return vendorRows.map(v=>({
+    ...v,
+    inQB:hasRef(qbRefs,v),
+    inST:hasRef(stRefs,v)
+  }));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// MEMBERSHIP BALANCE RECONCILIATION — fourth reconciliation dimension.
+// Compares QuickBooks vs. ServiceTitan membership/deferred balances,
+// summed per customer, matched by customer name only (per user decision —
+// no membership ID / account number is shared between the two systems).
+// Reuses the same 'matched'/'mismatch'/qb_only'/'st_only' status vocabulary
+// and AMOUNT_TOLERANCE as the bill reconciliation engine above, but is a
+// much simpler one-pass aggregate-and-match (no fuzzy date/amount passes —
+// there's exactly one row per customer per system to compare, not many).
+function buildMembershipReconciliation(qbRaw,stRaw){
+  const qbObjs=toObjects(qbRaw||[]);
+  const stObjs=toObjects(stRaw||[]);
+  const unmapped=new Set();
+
+  const qbByCustomer=new Map();
+  qbObjs.forEach(obj=>{
+    const custRaw=pickField(obj,QB_MEMBERSHIP_FIELD_ALIASES.customer);
+    const amtRaw=pickField(obj,QB_MEMBERSHIP_FIELD_ALIASES.amount);
+    if(custRaw===undefined)unmapped.add('QB customer');
+    if(amtRaw===undefined)unmapped.add('QB amount');
+    const customer=String(custRaw||'').trim();
+    // Skip rows with no customer (e.g. an opening-balance journal entry
+    // not tied to any customer) and report-footer "TOTAL" rows.
+    if(!customer||JUNK_VENDOR_RE.test(customer))return;
+    const key=vendorKey(customer);
+    if(!qbByCustomer.has(key))qbByCustomer.set(key,{customer,amount:0});
+    qbByCustomer.get(key).amount+=sf(amtRaw);
+  });
+
+  const stByCustomer=new Map();
+  stObjs.forEach(obj=>{
+    const custRaw=pickField(obj,ST_MEMBERSHIP_FIELD_ALIASES.customer);
+    const balRaw=pickField(obj,ST_MEMBERSHIP_FIELD_ALIASES.balance);
+    if(custRaw===undefined)unmapped.add('ST customer');
+    if(balRaw===undefined)unmapped.add('ST balance');
+    const customer=String(custRaw||'').trim();
+    if(!customer||JUNK_VENDOR_RE.test(customer))return;
+    const key=vendorKey(customer);
+    if(!stByCustomer.has(key))stByCustomer.set(key,{customer,amount:0});
+    stByCustomer.get(key).amount+=sf(balRaw);
+  });
+
+  if(unmapped.size)console.warn('[Coolbreeze] Membership Balance: could not confidently map columns for: '+[...unmapped].join(', ')+'. Extend QB_MEMBERSHIP_FIELD_ALIASES/ST_MEMBERSHIP_FIELD_ALIASES at the top of the script if these look wrong.');
+
+  const allKeys=new Set([...qbByCustomer.keys(),...stByCustomer.keys()]);
+  const results=[];
+  allKeys.forEach(key=>{
+    const qb=qbByCustomer.get(key), st=stByCustomer.get(key);
+    const qbAmount=qb?round2(qb.amount):null;
+    const stAmount=st?round2(st.amount):null;
+    const diff=round2((qbAmount||0)-(stAmount||0));
+    let status;
+    if(qb&&st)status=Math.abs(diff)<=AMOUNT_TOLERANCE?'matched':'mismatch';
+    else if(qb)status='qb_only';
+    else status='st_only';
+    results.push({
+      customer:(qb&&qb.customer)||(st&&st.customer)||'(Unknown Customer)',
+      qbAmount, stAmount, diff, status
+    });
+  });
+  return results;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// STATE + FILTER BAR
+// ══════════════════════════════════════════════════════════════════════════
+let ALL_RECON=[];      // full, unfiltered reconciliation result
+let FILTERED=[];       // after date/vendor/status/search filters
+let ALL_VENDOR_COVERAGE=[]; // full vendor-invoice-coverage result (built once per data load)
+let VC_FILTERED=[];         // after the coverage table's own search/status filter
+let ALL_MEMBERSHIP=[];      // full QB-vs-ST membership balance reconciliation (built once per data load)
+let MEM_FILTERED=[];        // after the membership table's own search/status filter
+let sortState={key:'diff',dir:'desc'};
+let curPage=1;
+const PAGE_SIZE=50;
+let vendSel=new Set();
+let acctSel=new Set();
+
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function monthStartISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-01'; }
+
+function fmtM(v){
+  if(v===null||v===undefined||isNaN(v))return '—';
+  const sign=v<0?'-':''; const av=Math.abs(v);
+  return sign+(av>=1e6?'$'+(av/1e6).toFixed(2)+'M':av>=1000?'$'+(av/1000).toFixed(1)+'K':'$'+av.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0}));
+}
+function fmtFull(v){
+  if(v===null||v===undefined||isNaN(v))return '—';
+  return v.toLocaleString('en-US',{style:'currency',currency:'USD'});
+}
+function fmtDate(d){ return d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'; }
+
+function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('expanded'); }
+function showDB(n){
+  document.querySelectorAll('.db-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.sidebar-item').forEach(b=>b.classList.remove('active'));
+  const panel=document.getElementById('db'+n); if(panel)panel.classList.add('active');
+  const nav=document.getElementById('nav-db'+n); if(nav)nav.classList.add('active');
+}
+
+// Bills Reconciliation <-> Membership Reconciliation view switch (dropdown
+// in the header). Both views live inside the same #db1 panel — this just
+// toggles which content block is visible, so the page isn't crowded with
+// every table/chart from both dimensions at once.
+function switchReconView(view){
+  const isMembership=view==='membership';
+  document.getElementById('viewBills').style.display=isMembership?'none':'';
+  document.getElementById('viewMembership').style.display=isMembership?'':'none';
+  const sub=document.querySelector('.hdr-t p');
+  if(sub)sub.textContent=isMembership
+    ?'QuickBooks vs ServiceTitan Membership Balances · Updated live from Google Drive'
+    :'QuickBooks vs ServiceTitan Bills · Updated live from Google Drive';
+  // A Chart.js canvas created (or last drawn) while its container was
+  // display:none renders at 0x0 until explicitly resized once the
+  // container becomes visible again.
+  requestAnimationFrame(()=>{
+    if(isMembership){ if(membershipChart)membershipChart.resize(); }
+    else{ [trendChart,statusChart,vendorChart,itemAccountChart].forEach(c=>{ if(c)c.resize(); }); }
+  });
+}
+
+// ── Vendor multi-select ──
+function populateVendMS(){
+  const vendors=[...new Set(ALL_RECON.map(r=>r.vendor))].sort((a,b)=>a.localeCompare(b));
+  const box=document.getElementById('vendMsItems');
+  box.innerHTML=vendors.map(v=>`<label class="ms-item"><input type="checkbox" value="${v.replace(/"/g,'&quot;')}" onchange="onVendMSChange()"><span>${v}</span></label>`).join('');
+}
+function toggleVendMS(e){ e.stopPropagation(); document.getElementById('vendMsPanel').classList.toggle('open'); document.getElementById('vendMsBtn').classList.toggle('open'); }
+document.addEventListener('click',(e)=>{
+  const wrap=document.getElementById('vendMsWrap');
+  if(wrap&&!wrap.contains(e.target)){ document.getElementById('vendMsPanel').classList.remove('open'); document.getElementById('vendMsBtn').classList.remove('open'); }
+});
+function onVendMSChange(){
+  vendSel=new Set([...document.querySelectorAll('#vendMsItems input:checked')].map(i=>i.value));
+  const btn=document.getElementById('vendMsBtn');
+  btn.textContent=vendSel.size?vendSel.size+' Vendor'+(vendSel.size>1?'s':'')+' ▾':'All Vendors ▾';
+  btn.classList.toggle('has-sel',vendSel.size>0);
+  applyAll();
+}
+function selectAllVendMS(){ document.querySelectorAll('#vendMsItems input').forEach(i=>i.checked=true); onVendMSChange(); }
+function clearVendMS(){ document.querySelectorAll('#vendMsItems input').forEach(i=>i.checked=false); onVendMSChange(); }
+function filterVendMSItems(q){
+  const ql=q.toLowerCase();
+  document.querySelectorAll('#vendMsItems .ms-item').forEach(el=>{
+    el.style.display=el.textContent.toLowerCase().includes(ql)?'flex':'none';
+  });
+}
+
+// ── Item Split Account multi-select (QuickBooks-only field — rows with
+//    no QB record, i.e. "Missing in QuickBooks", have no account and
+//    fall under "(No Item Split Account)"; selecting a specific account
+//    naturally excludes those rows, same as it excludes other accounts) ──
+function acctLabel(r){ return r.qbItemSplitAccount||'(No Item Split Account)'; }
+function populateAcctMS(){
+  const accounts=[...new Set(ALL_RECON.filter(r=>r.qbAmount!==null).map(acctLabel))].sort((a,b)=>a.localeCompare(b));
+  const box=document.getElementById('acctMsItems');
+  box.innerHTML=accounts.map(a=>`<label class="ms-item"><input type="checkbox" value="${a.replace(/"/g,'&quot;')}" onchange="onAcctMSChange()"><span>${a}</span></label>`).join('');
+}
+function toggleAcctMS(e){ e.stopPropagation(); document.getElementById('acctMsPanel').classList.toggle('open'); document.getElementById('acctMsBtn').classList.toggle('open'); }
+document.addEventListener('click',(e)=>{
+  const wrap=document.getElementById('acctMsWrap');
+  if(wrap&&!wrap.contains(e.target)){ document.getElementById('acctMsPanel').classList.remove('open'); document.getElementById('acctMsBtn').classList.remove('open'); }
+});
+function onAcctMSChange(){
+  acctSel=new Set([...document.querySelectorAll('#acctMsItems input:checked')].map(i=>i.value));
+  const btn=document.getElementById('acctMsBtn');
+  btn.textContent=acctSel.size?acctSel.size+' Account'+(acctSel.size>1?'s':'')+' ▾':'All Accounts ▾';
+  btn.classList.toggle('has-sel',acctSel.size>0);
+  applyAll();
+}
+function selectAllAcctMS(){ document.querySelectorAll('#acctMsItems input').forEach(i=>i.checked=true); onAcctMSChange(); }
+function clearAcctMS(){ document.querySelectorAll('#acctMsItems input').forEach(i=>i.checked=false); onAcctMSChange(); }
+function filterAcctMSItems(q){
+  const ql=q.toLowerCase();
+  document.querySelectorAll('#acctMsItems .ms-item').forEach(el=>{
+    el.style.display=el.textContent.toLowerCase().includes(ql)?'flex':'none';
+  });
+}
+
+// Trend chart's own Year filter — independent of the global From/To date
+// range. Always includes the current calendar year (even if there's no
+// data for it yet), plus any year actually present in the data. Keeps the
+// current selection across repopulation (e.g. after a background data
+// refresh) if it's still a valid option, otherwise defaults to this year.
+function populateTrendYearSel(){
+  const years=new Set([new Date().getFullYear()]);
+  ALL_RECON.forEach(r=>{
+    if(r.qbDate)years.add(r.qbDate.getFullYear());
+    if(r.stDate)years.add(r.stDate.getFullYear());
+  });
+  const sel=document.getElementById('trendYearSel');
+  const prev=sel.value;
+  const sorted=[...years].sort((a,b)=>b-a);
+  sel.innerHTML=sorted.map(y=>`<option value="${y}">${y}</option>`).join('');
+  sel.value=sorted.includes(+prev)?prev:String(new Date().getFullYear());
+}
+
+function resetFilters(){
+  document.getElementById('dateFrom').value=monthStartISO();
+  document.getElementById('dateTo').value=todayISO();
+  document.getElementById('searchBox').value='';
+  document.getElementById('statusSel').value='all';
+  clearVendMS();
+  clearAcctMS();
+  document.getElementById('vcSearchBox').value='';
+  document.getElementById('vcStatusSel').value='all';
+  applyVendorCoverage();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// APPLY FILTERS + RENDER
+// ══════════════════════════════════════════════════════════════════════════
+// Vendor / Item Split Account / Status / Search checks only — no date
+// logic. Shared by the main table/KPI filter (applyAll, below, which
+// adds the From/To date-range check on top) and by the trend chart's
+// own year filter, which needs these same filters applied but ignores
+// the global date range entirely.
+function passesNonDateFilters(r){
+  const status=document.getElementById('statusSel').value;
+  const q=(document.getElementById('searchBox').value||'').toLowerCase().trim();
+  if(vendSel.size>0&&!vendSel.has(r.vendor))return false;
+  if(acctSel.size>0&&!acctSel.has(acctLabel(r)))return false;
+  if(status!=='all'&&r.status!==status)return false;
+  if(q&&!(r.vendor.toLowerCase().includes(q)||r.billNumber.toLowerCase().includes(q)||(r.matchCodeDisplay||'').toLowerCase().includes(q)))return false;
+  return true;
+}
+
+function applyAll(){
+  const from=document.getElementById('dateFrom').value;
+  const to=document.getElementById('dateTo').value;
+
+  FILTERED=ALL_RECON.filter(r=>{
+    // BUGFIX: a row whose date never parsed (r.displayDate===null) used to
+    // skip the from/to check entirely and show up in EVERY date range,
+    // regardless of what was picked above — that's how a single bad-date
+    // row (e.g. a stray "TOTAL" footer line, or any bill with a malformed
+    // date cell) could blow up the KPI totals for a narrow filter like a
+    // single month. Now: if a date range is set, a row with no usable
+    // date is excluded (we can't confirm it belongs in range); it only
+    // shows when both From and To are cleared.
+    const diso=r.displayDate?isoDay(r.displayDate):null;
+    if(from||to){
+      if(!diso)return false;
+      if(from&&diso<from)return false;
+      if(to&&diso>to)return false;
+    }
+    return passesNonDateFilters(r);
+  });
+
+  curPage=1;
+  renderKPIs();
+  renderCharts();
+  renderTable();
+  document.getElementById('finfo').textContent=`${ALL_RECON.length} total bills · ${FILTERED.length} in current filter`;
+}
+
+function renderKPIs(){
+  const qbRows=FILTERED.filter(r=>r.qbAmount!==null);
+  const stRows=FILTERED.filter(r=>r.stAmount!==null);
+  const qbTotal=qbRows.reduce((s,r)=>s+r.qbAmount,0);
+  const stTotal=stRows.reduce((s,r)=>s+r.stAmount,0);
+  const matched=FILTERED.filter(r=>r.status==='matched');
+  const matchedAmt=matched.reduce((s,r)=>s+(r.qbAmount||r.stAmount||0),0);
+  const disc=FILTERED.filter(r=>r.status!=='matched');
+  const discAmt=disc.reduce((s,r)=>s+Math.abs(r.diff),0);
+
+  document.getElementById('kv-qb').textContent=fmtM(qbTotal);
+  document.getElementById('ks-qb').textContent=qbRows.length+' bill'+(qbRows.length===1?'':'s');
+  document.getElementById('kv-st').textContent=fmtM(stTotal);
+  document.getElementById('ks-st').textContent=stRows.length+' bill'+(stRows.length===1?'':'s');
+  document.getElementById('kv-matched').textContent=fmtM(matchedAmt);
+  document.getElementById('ks-matched').textContent=matched.length+' bill'+(matched.length===1?'':'s');
+  document.getElementById('kv-disc').textContent=fmtM(discAmt);
+  document.getElementById('ks-disc').textContent=disc.length+' bill'+(disc.length===1?'':'s')+' at risk';
+  const netDiff=qbTotal-stTotal;
+  document.getElementById('kv-diff').textContent=(netDiff<0?'-':'')+fmtM(Math.abs(netDiff));
+}
+
+// ── Charts (created once in initCharts(), updated here) ──
+let trendChart,statusChart,vendorChart,itemAccountChart,membershipChart;
+const ACCT_PALETTE=['#2563eb','#0e93a8','#0fa572','#e08a1e','#dc2626','#7c3aed','#db2777','#0891b2','#65a30d','#ea580c','#4f46e5','#059669','#c026d3','#0d9488','#b91c1c'];
+function gridC(){ return 'rgba(10,37,64,.06)'; }
+function initCharts(){
+  trendChart=new Chart(document.getElementById('trendChart'),{
+    type:'bar',
+    data:{labels:[],datasets:[
+      {label:'QuickBooks',data:[],backgroundColor:'#2563eb',borderRadius:4},
+      {label:'ServiceTitan',data:[],backgroundColor:'#0e93a8',borderRadius:4}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}},tooltip:{callbacks:{label:c=>' '+c.dataset.label+': '+fmtFull(c.parsed.y)}}},scales:{x:{grid:{display:false},ticks:{font:{size:10}}},y:{grid:{color:gridC()},ticks:{callback:v=>fmtM(v),font:{size:10}}}}}
+  });
+  statusChart=new Chart(document.getElementById('statusChart'),{
+    type:'doughnut',
+    data:{labels:['Matched','Amount Mismatch','Missing in ServiceTitan','Missing in QuickBooks'],datasets:[{data:[0,0,0,0],backgroundColor:['#0fa572','#e08a1e','#dc2626','#2563eb'],borderWidth:2,borderColor:'#fff'}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:10.5}}},tooltip:{callbacks:{label:c=>' '+c.label+': '+c.parsed+' bills'}}}}
+  });
+  vendorChart=new Chart(document.getElementById('vendorChart'),{
+    type:'bar',
+    data:{labels:[],datasets:[{label:'Discrepancy Amount',data:[],backgroundColor:'#dc2626',borderRadius:4}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+fmtFull(c.parsed.x)}}},scales:{x:{grid:{color:gridC()},ticks:{callback:v=>fmtM(v),font:{size:10}}},y:{grid:{display:false},ticks:{font:{size:10.5}}}}}
+  });
+  itemAccountChart=new Chart(document.getElementById('itemAccountChart'),{
+    type:'pie',
+    data:{labels:[],datasets:[{data:[],backgroundColor:ACCT_PALETTE,borderWidth:2,borderColor:'#fff'}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:10.5}}},tooltip:{callbacks:{label:c=>' '+c.label+': '+fmtFull(c.parsed)}}}}
+  });
+  membershipChart=new Chart(document.getElementById('membershipChart'),{
+    type:'bar',
+    data:{labels:[],datasets:[{label:'Discrepancy Amount',data:[],backgroundColor:'#dc2626',borderRadius:4}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+fmtFull(c.parsed.x)}}},scales:{x:{grid:{color:gridC()},ticks:{callback:v=>fmtM(v),font:{size:10}}},y:{grid:{display:false},ticks:{font:{size:10.5}}}}}
+  });
+}
+
+function renderCharts(){
+  // Trend: month-over-month totals for the selected year (its own Year
+  // filter, independent of the global From/To date range), defaulting to
+  // year-to-date for the current year. Still respects the other filters
+  // (Vendor, Item Split Account, Status, Search) via passesNonDateFilters,
+  // so it stays in sync with the rest of the dashboard.
+  const nowY=new Date().getFullYear();
+  const selYear=parseInt(document.getElementById('trendYearSel').value,10)||nowY;
+  const lastMonthIdx=selYear===nowY?new Date().getMonth():11; // YTD if current year, else full year
+  const MONTH_LABELS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const monthTotals=[];
+  for(let m=0;m<=lastMonthIdx;m++)monthTotals.push({qb:0,st:0});
+  ALL_RECON.filter(passesNonDateFilters).forEach(r=>{
+    if(r.qbDate&&r.qbDate.getFullYear()===selYear){
+      const m=r.qbDate.getMonth();
+      if(m<=lastMonthIdx)monthTotals[m].qb+=r.qbAmount;
+    }
+    if(r.stDate&&r.stDate.getFullYear()===selYear){
+      const m=r.stDate.getMonth();
+      if(m<=lastMonthIdx)monthTotals[m].st+=r.stAmount;
+    }
+  });
+  trendChart.data.labels=MONTH_LABELS.slice(0,lastMonthIdx+1);
+  trendChart.data.datasets[0].data=monthTotals.map(b=>+b.qb.toFixed(2));
+  trendChart.data.datasets[1].data=monthTotals.map(b=>+b.st.toFixed(2));
+  trendChart.update();
+
+  const counts={matched:0,mismatch:0,qb_only:0,st_only:0};
+  FILTERED.forEach(r=>counts[r.status]++);
+  statusChart.data.datasets[0].data=[counts.matched,counts.mismatch,counts.qb_only,counts.st_only];
+  statusChart.update();
+
+  const vendMap=new Map();
+  FILTERED.filter(r=>r.status!=='matched').forEach(r=>{
+    vendMap.set(r.vendor,(vendMap.get(r.vendor)||0)+Math.abs(r.diff));
+  });
+  const top=[...vendMap.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8);
+  vendorChart.data.labels=top.map(t=>t[0]);
+  vendorChart.data.datasets[0].data=top.map(t=>+t[1].toFixed(2));
+  vendorChart.update();
+
+  // Consolidated QuickBooks total by Item split account — every row that
+  // has a QB amount counts here (matched, mismatch, or qb_only), not just
+  // discrepancies, since this is a spend breakdown, not a risk view.
+  const acctMap=new Map();
+  FILTERED.forEach(r=>{
+    if(r.qbAmount===null||r.qbAmount===undefined)return;
+    const acct=r.qbItemSplitAccount||'(No Item Split Account)';
+    acctMap.set(acct,(acctMap.get(acct)||0)+r.qbAmount);
+  });
+  const acctSorted=[...acctMap.entries()].sort((a,b)=>b[1]-a[1]);
+  const ACCT_CHART_LIMIT=15;
+  if(acctSorted.length>ACCT_CHART_LIMIT)console.warn(`[Coolbreeze] Item Split Account chart: showing top ${ACCT_CHART_LIMIT} of ${acctSorted.length} accounts.`);
+  const acctTop=acctSorted.slice(0,ACCT_CHART_LIMIT);
+  itemAccountChart.data.labels=acctTop.map(t=>t[0]);
+  itemAccountChart.data.datasets[0].data=acctTop.map(t=>+t[1].toFixed(2));
+  itemAccountChart.update();
+}
+
+// ── Table: sort, paginate, render ──
+function sortBy(key){
+  if(sortState.key===key)sortState.dir=sortState.dir==='asc'?'desc':'asc';
+  else{sortState.key=key;sortState.dir='desc';}
+  curPage=1;
+  renderTable();
+}
+function sortVal(r,key){
+  if(key==='qbDate')return r.qbDate?r.qbDate.getTime():-Infinity;
+  if(key==='stDate')return r.stDate?r.stDate.getTime():-Infinity;
+  if(key==='diff')return Math.abs(r.diff);
+  if(typeof r[key]==='string')return r[key].toLowerCase();
+  return r[key]===null||r[key]===undefined?-Infinity:r[key];
+}
+const STATUS_META={
+  matched:{cls:'badge-matched',label:'✓ Matched'},
+  mismatch:{cls:'badge-mismatch',label:'⚠ Mismatch'},
+  qb_only:{cls:'badge-qbonly',label:'✕ Missing in ST'},
+  st_only:{cls:'badge-stonly',label:'✕ Missing in QB'},
+};
+function renderTable(){
+  document.querySelectorAll('thead th').forEach(th=>th.classList.remove('sort-asc','sort-desc'));
+  const activeTh=document.getElementById('th-'+sortState.key);
+  if(activeTh)activeTh.classList.add(sortState.dir==='asc'?'sort-asc':'sort-desc');
+
+  const sorted=[...FILTERED].sort((a,b)=>{
+    const av=sortVal(a,sortState.key), bv=sortVal(b,sortState.key);
+    if(av<bv)return sortState.dir==='asc'?-1:1;
+    if(av>bv)return sortState.dir==='asc'?1:-1;
+    return 0;
+  });
+
+  const totalPages=Math.max(1,Math.ceil(sorted.length/PAGE_SIZE));
+  if(curPage>totalPages)curPage=totalPages;
+  const pageRows=sorted.slice((curPage-1)*PAGE_SIZE,curPage*PAGE_SIZE);
+
+  document.getElementById('tBody').innerHTML=pageRows.map(r=>{
+    const meta=STATUS_META[r.status];
+    const diffCls=Math.abs(r.diff)<=AMOUNT_TOLERANCE?'td-diff-ok':'td-diff-bad';
+    return `<tr>
+      <td><span class="badge ${meta.cls}">${meta.label}</span></td>
+      <td class="td-vend">${r.vendor}</td>
+      <td>${r.billNumber||'—'}</td>
+      <td class="col-matchcode" style="font-family:monospace;font-size:11.5px;color:var(--gray-500)">${r.matchCodeDisplay||'—'}</td>
+      <td class="td-val">${r.qbAmount!==null?fmtFull(r.qbAmount):'—'}</td>
+      <td>${fmtDate(r.qbDate)}</td>
+      <td class="td-val">${r.stAmount!==null?fmtFull(r.stAmount):'—'}</td>
+      <td>${fmtDate(r.stDate)}</td>
+      <td class="${diffCls}">${r.diff>0?'+':''}${fmtFull(r.diff)}</td>
+      <td>${r.status==='qb_only'&&r.qbTxnId?`<a class="btn-open-qbo" href="https://qbo.intuit.com/app/bill?txnId=${encodeURIComponent(r.qbTxnId)}" target="_blank" rel="noopener noreferrer">Open ↗</a>`:'—'}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="10" style="text-align:center;color:var(--gray-500);padding:24px">No bills match the current filters.</td></tr>`;
+
+  document.getElementById('tcount').textContent=sorted.length+' record'+(sorted.length===1?'':'s');
+
+  const qbSum=sorted.reduce((s,r)=>s+(r.qbAmount||0),0);
+  const stSum=sorted.reduce((s,r)=>s+(r.stAmount||0),0);
+  const discSum=sorted.filter(r=>r.status!=='matched').reduce((s,r)=>s+Math.abs(r.diff),0);
+  const tfoot=document.getElementById('tfoot-totals');
+  if(sorted.length){
+    tfoot.style.display='flex';
+    document.getElementById('tfoot-qb').textContent='QB '+fmtFull(qbSum);
+    document.getElementById('tfoot-st').textContent='ST '+fmtFull(stSum);
+    document.getElementById('tfoot-disc').textContent='Discrepancy '+fmtFull(discSum);
+  }else{ tfoot.style.display='none'; }
+
+  renderPagination(totalPages);
+}
+function renderPagination(totalPages){
+  const el=document.getElementById('pagination');
+  if(totalPages<=1){ el.innerHTML=''; return; }
+  let html='';
+  html+=`<button class="pg-btn" ${curPage===1?'disabled':''} onclick="gotoPage(${curPage-1})">‹ Prev</button>`;
+  html+=`<span class="pg-info">Page ${curPage} of ${totalPages}</span>`;
+  html+=`<button class="pg-btn" ${curPage===totalPages?'disabled':''} onclick="gotoPage(${curPage+1})">Next ›</button>`;
+  el.innerHTML=html;
+}
+function gotoPage(n){ curPage=n; renderTable(); }
+
+function exportXLSX(){
+  const rows=FILTERED.map(r=>({
+    Status:STATUS_META[r.status].label.replace(/^[✓⚠✕]\s*/,''),
+    Vendor:r.vendor,
+    'Bill / Ref #':r.billNumber,
+    'Matching Code':r.matchCodeDisplay,
+    'QB Amount':r.qbAmount,
+    'QB Date':r.qbDate?isoDay(r.qbDate):'',
+    'ST Amount':r.stAmount,
+    'ST Date':r.stDate?isoDay(r.stDate):'',
+    Difference:r.diff,
+    'QuickBooks Link':(r.status==='qb_only'&&r.qbTxnId)?('https://qbo.intuit.com/app/bill?txnId='+r.qbTxnId):''
+  }));
+  const ws=XLSX.utils.json_to_sheet(rows);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Reconciliation');
+  XLSX.writeFile(wb,'Coolbreeze_Reconciliation_'+todayISO()+'.xlsx');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// LOAD + INIT
+// ══════════════════════════════════════════════════════════════════════════
+function setStep(step,sub){
+  const s=document.getElementById('load-step'); if(s)s.textContent=step;
+  const b=document.getElementById('load-sub'); if(b)b.textContent=sub;
+}
+function fmtTime(){ return new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); }
+
+function renderAll(qbRows,stRows,vendorRows,qbMemRows,stMemRows){
+  ALL_RECON=buildReconciliation(qbRows||[],stRows||[]);
+  ALL_VENDOR_COVERAGE=buildVendorCoverage(vendorRows||[],qbRows||[],stRows||[]);
+  ALL_MEMBERSHIP=buildMembershipReconciliation(qbMemRows||[],stMemRows||[]);
+  populateVendMS();
+  populateAcctMS();
+  populateTrendYearSel();
+  applyAll();
+  applyVendorCoverage();
+  applyMembership();
+}
+
+// ── Vendor Invoice Coverage table: respects the main From/To date range
+// above (same BUGFIX as applyAll() — a row with no usable date is
+// excluded once a range is set, not shown in every range), plus its
+// own lightweight search/status filter on top.
+function applyVendorCoverage(){
+  const from=document.getElementById('dateFrom').value;
+  const to=document.getElementById('dateTo').value;
+  const status=document.getElementById('vcStatusSel').value;
+  const q=(document.getElementById('vcSearchBox').value||'').toLowerCase().trim();
+  VC_FILTERED=ALL_VENDOR_COVERAGE.filter(r=>{
+    if(from||to){
+      if(!r.dateISO)return false;
+      if(from&&r.dateISO<from)return false;
+      if(to&&r.dateISO>to)return false;
+    }
+    if(status==='missing_qb'&&r.inQB)return false;
+    if(status==='missing_st'&&r.inST)return false;
+    if(status==='missing_both'&&(r.inQB||r.inST))return false;
+    if(status==='in_both'&&!(r.inQB&&r.inST))return false;
+    if(q&&!(r.vendor.toLowerCase().includes(q)||r.invoiceNumber.toLowerCase().includes(q)||r.poNumber.toLowerCase().includes(q)))return false;
+    return true;
+  });
+  renderVendorCoverageTable();
+}
+
+const VC_ROW_CAP=500; // DOM-size safety cap — the sheet can run 1000+ rows across all vendor tabs
+function renderVendorCoverageTable(){
+  const body=document.getElementById('vcBody');
+  const rows=VC_FILTERED.slice(0,VC_ROW_CAP);
+  body.innerHTML=rows.map(r=>`<tr>
+      <td class="td-vend">${r.vendor}</td>
+      <td>${r.invoiceNumber||'—'}</td>
+      <td>${r.poNumber||'—'}</td>
+      <td class="td-val">${fmtFull(r.amount)}</td>
+      <td>${fmtDate(r.date)}</td>
+      <td>${r.inQB?'<span class="badge badge-covered">✓ Yes</span>':'<span class="badge badge-missing">✕ Missing</span>'}</td>
+      <td>${r.inST?'<span class="badge badge-covered">✓ Yes</span>':'<span class="badge badge-missing">✕ Missing</span>'}</td>
+    </tr>`).join('') || `<tr><td colspan="7" style="text-align:center;color:var(--gray-500);padding:24px">No vendor transactions match the current filters.</td></tr>`;
+  const missingQB=ALL_VENDOR_COVERAGE.filter(r=>!r.inQB).length;
+  const missingST=ALL_VENDOR_COVERAGE.filter(r=>!r.inST).length;
+  let countText=`${VC_FILTERED.length} of ${ALL_VENDOR_COVERAGE.length} · ${missingQB} missing from QB · ${missingST} missing from ST`;
+  if(VC_FILTERED.length>VC_ROW_CAP){
+    countText+=` (showing first ${VC_ROW_CAP} — narrow the filter to see the rest)`;
+    console.warn(`[Coolbreeze] Vendor Coverage table: showing first ${VC_ROW_CAP} of ${VC_FILTERED.length} filtered rows.`);
+  }
+  document.getElementById('vcCount').textContent=countText;
+}
+
+// ── Membership Balance table: its own lightweight search/status filter
+// (no date range — a membership balance is a current-state snapshot, not
+// a dated transaction, so it's deliberately independent of the main
+// Bills-view date filter). ──
+function applyMembership(){
+  const status=document.getElementById('memStatusSel').value;
+  const q=(document.getElementById('memSearchBox').value||'').toLowerCase().trim();
+  MEM_FILTERED=ALL_MEMBERSHIP.filter(r=>{
+    if(status!=='all'&&r.status!==status)return false;
+    if(q&&!r.customer.toLowerCase().includes(q))return false;
+    return true;
+  });
+  renderMembershipKPIs();
+  renderMembershipChart();
+  renderMembershipTable();
+}
+
+function renderMembershipKPIs(){
+  const qbRows=MEM_FILTERED.filter(r=>r.qbAmount!==null);
+  const stRows=MEM_FILTERED.filter(r=>r.stAmount!==null);
+  const qbTotal=qbRows.reduce((s,r)=>s+r.qbAmount,0);
+  const stTotal=stRows.reduce((s,r)=>s+r.stAmount,0);
+  const matched=MEM_FILTERED.filter(r=>r.status==='matched');
+  const matchedAmt=matched.reduce((s,r)=>s+(r.qbAmount||r.stAmount||0),0);
+  const disc=MEM_FILTERED.filter(r=>r.status!=='matched');
+  const discAmt=disc.reduce((s,r)=>s+Math.abs(r.diff),0);
+
+  document.getElementById('mkv-qb').textContent=fmtM(qbTotal);
+  document.getElementById('mks-qb').textContent=qbRows.length+' customer'+(qbRows.length===1?'':'s');
+  document.getElementById('mkv-st').textContent=fmtM(stTotal);
+  document.getElementById('mks-st').textContent=stRows.length+' customer'+(stRows.length===1?'':'s');
+  document.getElementById('mkv-matched').textContent=fmtM(matchedAmt);
+  document.getElementById('mks-matched').textContent=matched.length+' customer'+(matched.length===1?'':'s');
+  document.getElementById('mkv-disc').textContent=fmtM(discAmt);
+  document.getElementById('mks-disc').textContent=disc.length+' customer'+(disc.length===1?'':'s')+' at risk';
+  const netDiff=qbTotal-stTotal;
+  document.getElementById('mkv-diff').textContent=(netDiff<0?'-':'')+fmtM(Math.abs(netDiff));
+}
+
+function renderMembershipChart(){
+  const map=new Map();
+  MEM_FILTERED.filter(r=>r.status!=='matched').forEach(r=>{
+    map.set(r.customer,Math.abs(r.diff));
+  });
+  const top=[...map.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8);
+  membershipChart.data.labels=top.map(t=>t[0]);
+  membershipChart.data.datasets[0].data=top.map(t=>+t[1].toFixed(2));
+  membershipChart.update();
+}
+
+const MEM_ROW_CAP=500; // DOM-size safety cap, same pattern as Vendor Coverage
+function renderMembershipTable(){
+  const sorted=[...MEM_FILTERED].sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
+  const rows=sorted.slice(0,MEM_ROW_CAP);
+  document.getElementById('memBody').innerHTML=rows.map(r=>{
+    const meta=STATUS_META[r.status];
+    const diffCls=Math.abs(r.diff)<=AMOUNT_TOLERANCE?'td-diff-ok':'td-diff-bad';
+    return `<tr>
+      <td><span class="badge ${meta.cls}">${meta.label}</span></td>
+      <td class="td-vend">${r.customer}</td>
+      <td class="td-val">${r.qbAmount!==null?fmtFull(r.qbAmount):'—'}</td>
+      <td class="td-val">${r.stAmount!==null?fmtFull(r.stAmount):'—'}</td>
+      <td class="${diffCls}">${r.diff>0?'+':''}${fmtFull(r.diff)}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="5" style="text-align:center;color:var(--gray-500);padding:24px">No membership records match the current filters.</td></tr>`;
+  let countText=`${sorted.length} of ${ALL_MEMBERSHIP.length} customer`+(ALL_MEMBERSHIP.length===1?'':'s');
+  if(sorted.length>MEM_ROW_CAP){
+    countText+=` (showing first ${MEM_ROW_CAP} — narrow the filter to see the rest)`;
+    console.warn(`[Coolbreeze] Membership table: showing first ${MEM_ROW_CAP} of ${sorted.length} filtered rows.`);
+  }
+  document.getElementById('memCount').textContent=countText;
+}
+
+async function loadAndInit(){
+  const overlay=document.getElementById('loadOverlay');
+  document.getElementById('dateFrom').value=document.getElementById('dateFrom').value||monthStartISO();
+  document.getElementById('dateTo').value=document.getElementById('dateTo').value||todayISO();
+
+  const cachedQB=getCached(REPORT_KEY_QB), cachedST=getCached(REPORT_KEY_ST), cachedVendorTxns=getCached(REPORT_KEY_VENDOR_TXNS);
+  const cachedQBMem=getCached(REPORT_KEY_QB_MEMBERSHIP), cachedSTMem=getCached(REPORT_KEY_ST_MEMBERSHIP);
+  if(cachedQB||cachedST){
+    if(overlay)overlay.style.display='none';
+    try{ renderAll(cachedQB,cachedST,cachedVendorTxns,cachedQBMem,cachedSTMem); }catch(e){ console.warn('[Cache render]',e); }
+    document.getElementById('lastUpdated').textContent=`⚡ Cached ${fmtTime()} — refreshing…`;
+    try{
+      const [qbRows,stRows,vendorTxnRows,qbMemRows,stMemRows]=await Promise.all([
+        fetchReportWithRetry(REPORT_KEY_QB).catch(e=>{console.warn('[QB bg]',e.message);return cachedQB;}),
+        fetchReportWithRetry(REPORT_KEY_ST).catch(e=>{console.warn('[ST bg]',e.message);return cachedST;}),
+        fetchReportWithRetry(REPORT_KEY_VENDOR_TXNS).catch(e=>{console.warn('[VendorTxns bg]',e.message);return cachedVendorTxns;}),
+        fetchReportWithRetry(REPORT_KEY_QB_MEMBERSHIP).catch(e=>{console.warn('[QB Membership bg]',e.message);return cachedQBMem;}),
+        fetchReportWithRetry(REPORT_KEY_ST_MEMBERSHIP).catch(e=>{console.warn('[ST Membership bg]',e.message);return cachedSTMem;})
+      ]);
+      if(qbRows)setCache(REPORT_KEY_QB,qbRows);
+      if(stRows)setCache(REPORT_KEY_ST,stRows);
+      if(vendorTxnRows)setCache(REPORT_KEY_VENDOR_TXNS,vendorTxnRows);
+      if(qbMemRows)setCache(REPORT_KEY_QB_MEMBERSHIP,qbMemRows);
+      if(stMemRows)setCache(REPORT_KEY_ST_MEMBERSHIP,stMemRows);
+      renderAll(qbRows||cachedQB,stRows||cachedST,vendorTxnRows||cachedVendorTxns,qbMemRows||cachedQBMem,stMemRows||cachedSTMem);
+      document.getElementById('lastUpdated').textContent=`✓ Live data ${fmtTime()}`;
+    }catch(e){
+      console.warn('[BG refresh failed]',e);
+      document.getElementById('lastUpdated').textContent=`⚠ Refresh failed: ${e.message.slice(0,60)}`;
+      document.getElementById('lastUpdated').title=e.message;
+    }
+    return;
+  }
+
+  let tick;
+  try{
+    if(overlay)overlay.style.display='flex';
+    const t0=Date.now();
+    tick=setInterval(()=>{ const el=document.getElementById('load-timer'); if(el)el.textContent=((Date.now()-t0)/1000).toFixed(0)+'s elapsed'; },500);
+    setStep('Connecting to Google Drive…','Fetching QuickBooks, ServiceTitan, Vendor Transactions & Membership Balance reports');
+    const [qbRows,stRows,vendorTxnRows,qbMemRows,stMemRows]=await Promise.all([
+      fetchReportWithRetry(REPORT_KEY_QB).catch(e=>{console.warn('[QB]',e.message);throw e;}),
+      fetchReportWithRetry(REPORT_KEY_ST).catch(e=>{console.warn('[ST]',e.message);throw e;}),
+      // Non-fatal: the vendor-coverage and membership-balance sections are
+      // bonus dimensions, not core to the dashboard — a hiccup in either
+      // (e.g. sheet permissions, no report processed yet) shouldn't block
+      // the rest of the dashboard from loading.
+      fetchReportWithRetry(REPORT_KEY_VENDOR_TXNS).catch(e=>{console.warn('[VendorTxns]',e.message);return [];}),
+      fetchReportWithRetry(REPORT_KEY_QB_MEMBERSHIP).catch(e=>{console.warn('[QB Membership]',e.message);return [];}),
+      fetchReportWithRetry(REPORT_KEY_ST_MEMBERSHIP).catch(e=>{console.warn('[ST Membership]',e.message);return [];})
+    ]);
+    clearInterval(tick);
+    setStep('Processing data…','Matching bills between systems');
+    setCache(REPORT_KEY_QB,qbRows);
+    setCache(REPORT_KEY_ST,stRows);
+    setCache(REPORT_KEY_VENDOR_TXNS,vendorTxnRows);
+    setCache(REPORT_KEY_QB_MEMBERSHIP,qbMemRows);
+    setCache(REPORT_KEY_ST_MEMBERSHIP,stMemRows);
+    renderAll(qbRows,stRows,vendorTxnRows,qbMemRows,stMemRows);
+    document.getElementById('lastUpdated').textContent=`✓ Live data ${fmtTime()}`;
+    if(overlay)overlay.style.display='none';
+  }catch(e){
+    console.error('[Coolbreeze] Load error:',e);
+    if(tick)clearInterval(tick);
+    if(overlay){
+      document.getElementById('loadCard').innerHTML=`<div style="font-size:32px;margin-bottom:12px">⚠</div><div style="font-weight:700;color:#132537;margin-bottom:8px">Failed to load data</div><div style="color:#7a8ba0;font-size:13px;margin-bottom:16px">${e.message}</div><button onclick="location.reload()" style="background:#22d3ee;color:#0a2540;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700">↻ Retry</button>`;
+    }
+  }
+}
+
+async function softRefresh(){
+  document.getElementById('lastUpdated').textContent='Refreshing…';
+  loadAndInit();
+}
+async function forceRefresh(){
+  clearAllCache();
+  document.getElementById('lastUpdated').textContent='Refreshing…';
+  loadAndInit();
+}
+
+initCharts();
+document.getElementById('dateFrom').value=monthStartISO();
+document.getElementById('dateTo').value=todayISO();
+document.addEventListener('DOMContentLoaded',loadAndInit);
+</script>
+</body>
+</html>
