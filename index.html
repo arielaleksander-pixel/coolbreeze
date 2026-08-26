@@ -457,6 +457,13 @@ const REPORT_KEY_ST_MEMBERSHIP = 'servicetitanMembership';
 const MATCH_DATE_TOLERANCE_DAYS = 3;   // fuzzy vendor+amount+date match window
 const AMOUNT_TOLERANCE = 0.01;         // amounts within 1 cent count as equal
 
+// Vendor Invoice Coverage's fuzzy fallback (see buildVendorCoverage) compares
+// a vendor's own invoice date against whichever date QuickBooks/ServiceTitan
+// happened to record the bill under — that gap can run several days (e.g. an
+// invoice dated the day it was cut vs. entered into ServiceTitan days later),
+// wider than the bill-to-bill MATCH_DATE_TOLERANCE_DAYS above.
+const VENDOR_COVERAGE_DATE_TOLERANCE_DAYS = 10;
+
 const CACHE_TTL = 15 * 60 * 1000; // 15 min
 
 // Candidate header names (case/space/underscore-insensitive) normalizeRow()
@@ -648,6 +655,35 @@ function sd(v){ // safe date — Date object, ISO string, "M/D/YYYY", or Excel s
 
 function vendorKey(v){ return String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
 function isoDay(d){ return d?d.toISOString().slice(0,10):null; }
+
+// Small edit-distance vendor-name matching — tolerates spelling drift
+// between how a vendor's name is entered in one source vs. another (e.g.
+// the Vendor Transactions sheet's "Lenox" tab vs. QuickBooks/ServiceTitan's
+// "Lennox"). Used only as a fallback (see buildVendorCoverage) alongside an
+// amount+date check, so a coincidental 1-letter collision between two
+// genuinely different short vendor names still needs those to line up too.
+function levenshtein(a,b){
+  const m=a.length,n=b.length;
+  if(!m)return n; if(!n)return m;
+  const dp=new Array(n+1);
+  for(let j=0;j<=n;j++)dp[j]=j;
+  for(let i=1;i<=m;i++){
+    let prev=dp[0]; dp[0]=i;
+    for(let j=1;j<=n;j++){
+      const tmp=dp[j];
+      dp[j]=a[i-1]===b[j-1]?prev:1+Math.min(prev,dp[j],dp[j-1]);
+      prev=tmp;
+    }
+  }
+  return dp[n];
+}
+function vendorNamesMatch(a,b){
+  if(!a||!b)return false;
+  if(a===b)return true;
+  const maxLen=Math.max(a.length,b.length);
+  const threshold=maxLen<=6?1:maxLen<=10?2:3;
+  return levenshtein(a,b)<=threshold;
+}
 
 function monthNameOf(d){ return d?d.toLocaleDateString('en-US',{month:'long'}):''; }
 function codeClean(s){ return String(s==null?'':s).replace(/[^a-zA-Z0-9]/g,''); }
@@ -876,6 +912,39 @@ function normalizeVendorTxnRows(rawRows){
   return out;
 }
 
+// BUGFIX: this used to check ONLY exact Bill/Ref # equality between the
+// vendor sheet's Invoice #/PO # and whatever QuickBooks/ServiceTitan store
+// as their own Bill/Ref # — but QB/ST commonly use their own internal doc
+// numbering instead of the vendor's invoice number, so that check almost
+// never matched anything (every single vendor-transaction row was coming
+// back "missing" from both systems, even bills that were genuinely
+// recorded — confirmed by cross-checking against Bill Reconciliation,
+// which found them fine via its own vendor+amount+date fuzzy pass). Now:
+// exact ref-number match first (still the most trustworthy signal when it
+// hits), then a fuzzy vendor+amount+date fallback — same kind of match
+// buildReconciliation()'s Pass 3 already uses — for anything that didn't.
+function fuzzyVendorCoverageMatch(rows,vendorRows,alreadyMatched){
+  const used=new Array(rows.length).fill(false);
+  return vendorRows.map((v,i)=>{
+    if(alreadyMatched[i])return false; // already covered by an exact ref-number match
+    let bestIdx=-1,bestScore=Infinity;
+    rows.forEach((row,ri)=>{
+      if(used[ri]||!row.vendorK)return;
+      if(!vendorNamesMatch(v.vendorK,row.vendorK))return;
+      const amtDiff=Math.abs(v.amount-row.amount);
+      const amtBand=Math.max(AMOUNT_TOLERANCE,Math.abs(v.amount)*0.02+0.01);
+      if(amtDiff>amtBand)return;
+      let dayDiff=999;
+      if(v.date&&row.date)dayDiff=Math.abs((v.date-row.date)/86400000);
+      if(dayDiff>VENDOR_COVERAGE_DATE_TOLERANCE_DAYS)return;
+      const score=amtDiff*10+dayDiff;
+      if(score<bestScore){bestScore=score;bestIdx=ri;}
+    });
+    if(bestIdx>-1){used[bestIdx]=true;return true;}
+    return false;
+  });
+}
+
 function buildVendorCoverage(vendorRaw,qbRaw,stRaw){
   const vendorRows=normalizeVendorTxnRows(vendorRaw||[]);
   // Reuses the same normalizeRows() as the main reconciliation — QB/ST
@@ -887,10 +956,16 @@ function buildVendorCoverage(vendorRaw,qbRaw,stRaw){
   const qbRefs=new Set(qb.filter(r=>r.billNumber).map(r=>r.billNumber.toLowerCase()));
   const stRefs=new Set(st.filter(r=>r.billNumber).map(r=>r.billNumber.toLowerCase()));
   const hasRef=(refs,v)=>(v.invoiceNumber&&refs.has(v.invoiceNumber.toLowerCase()))||(v.poNumber&&refs.has(v.poNumber.toLowerCase()));
-  return vendorRows.map(v=>({
+
+  const exactQB=vendorRows.map(v=>hasRef(qbRefs,v));
+  const exactST=vendorRows.map(v=>hasRef(stRefs,v));
+  const fuzzyQB=fuzzyVendorCoverageMatch(qb,vendorRows,exactQB);
+  const fuzzyST=fuzzyVendorCoverageMatch(st,vendorRows,exactST);
+
+  return vendorRows.map((v,i)=>({
     ...v,
-    inQB:hasRef(qbRefs,v),
-    inST:hasRef(stRefs,v)
+    inQB:exactQB[i]||fuzzyQB[i],
+    inST:exactST[i]||fuzzyST[i]
   }));
 }
 
@@ -1593,3 +1668,4 @@ document.addEventListener('DOMContentLoaded',loadAndInit);
 </script>
 </body>
 </html>
+  
