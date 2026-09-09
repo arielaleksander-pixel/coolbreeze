@@ -287,6 +287,7 @@ tbody td{padding:9px 12px;color:var(--gray-700);vertical-align:middle}
     <option value="mismatch">⚠ Amount Mismatch</option>
     <option value="qb_only">✕ Missing in ServiceTitan</option>
     <option value="st_only">✕ Missing in QuickBooks</option>
+    <option value="date_split">⚠ QB/ST Date Split</option>
   </select>
 
   <button class="btn-reset" onclick="resetFilters()">Reset</button>
@@ -302,15 +303,15 @@ tbody td{padding:9px 12px;color:var(--gray-700);vertical-align:middle}
     <div class="kpi amber"><div class="kpi-ico">Δ</div><div class="kpi-lbl">Net Difference <span class="tip-ic" data-tip="QuickBooks Total minus ServiceTitan Total for the current filtered range.">ⓘ</span></div><div class="kpi-val" id="kv-diff">—</div><div class="kpi-sub">QB − ST</div></div>
   </div>
 
-  <div class="row2">
-    <div class="card"><div class="ct"><span>QuickBooks vs ServiceTitan Totals Over Time</span><select class="chart-yr-sel" id="trendYearSel" onchange="renderCharts()"></select></div><div class="chart-wrap" style="height:250px"><canvas id="trendChart"></canvas></div></div>
-    <div class="card"><div class="ct">Bills by Match Status</div><div class="chart-wrap" style="height:250px"><canvas id="statusChart"></canvas></div></div>
+  <div style="margin-bottom:14px">
+    <div class="card"><div class="ct"><span>QuickBooks vs ServiceTitan Totals Over Time <span class="tip-ic" data-tip="Each bar is that calendar month's full total (by each system's own bill date), independent of the From/To date filter above — only the Year selector and the Vendor/Item Split Account/Status/Search filters narrow it. So a KPI card scoped to a partial date range (e.g. the first few days of a month) can legitimately show a smaller number than that month's bar here.">ⓘ</span></span><select class="chart-yr-sel" id="trendYearSel" onchange="renderCharts()"></select></div><div class="chart-wrap" style="height:250px"><canvas id="trendChart"></canvas></div></div>
   </div>
   <div style="margin-bottom:20px">
     <div class="card"><div class="ct">Top Vendors by Discrepancy Amount</div><div class="chart-wrap" style="height:240px"><canvas id="vendorChart"></canvas></div></div>
   </div>
-  <div style="margin-bottom:20px">
+  <div class="row2">
     <div class="card"><div class="ct">QuickBooks Total by Item Split Account <span class="tip-ic" data-tip="Sum of QuickBooks bill amounts in the current filtered range, grouped by the Item split account column.">ⓘ</span></div><div class="chart-wrap" style="height:280px"><canvas id="itemAccountChart"></canvas></div></div>
+    <div class="card"><div class="ct">Bills by Match Status</div><div class="chart-wrap" style="height:280px"><canvas id="statusChart"></canvas></div></div>
   </div>
 
   <div class="tcard">
@@ -361,6 +362,7 @@ tbody td{padding:9px 12px;color:var(--gray-700);vertical-align:middle}
           <option value="in_both">In Both</option>
         </select>
         <span class="tcnt" id="vcCount">— records</span>
+        <a class="btn-export" href="https://docs.google.com/spreadsheets/d/1xUjXj61a7EW9pE0foIdQ-_Sq-e3DTUdEaAFKJzfFf88/edit?usp=sharing" target="_blank" rel="noopener noreferrer" style="text-decoration:none;display:inline-flex;align-items:center">📄 Open Source Sheet</a>
       </div>
     </div>
     <div class="tbl-wrap">
@@ -485,10 +487,24 @@ const FIELD_ALIASES = {
 // matching — it's purely for the "Open" link in the audit table.
 const TXN_ID_ALIASES=['transaction id','txn id','transactionid','qbo transaction id','qb transaction id'];
 
+// QuickBooks transaction-type column (e.g. Bill, Vendor Credit) captured
+// for QuickBooks rows only — used solely to pick the right QBO deep-link
+// URL for the Open-in-QuickBooks link (see qboLinkBase below); not a
+// generic FIELD_ALIASES entry since it has nothing to do with row matching.
+const TXN_TYPE_ALIASES=['transaction type','txn type'];
+
 // QuickBooks' expense-category column for a bill line — used to build the
 // "QuickBooks by Item Split Account" chart (a consolidated total per
 // account across all QB bills currently in view, not just mismatches).
 const ITEM_SPLIT_ACCOUNT_ALIASES=['item split account','split account','item account','account full name','account'];
+
+// Item Split Account values that are QuickBooks-only by design: this
+// expense category is never expected to have a ServiceTitan counterpart,
+// so an unmatched QB row (qb_only) in one of these accounts should not be
+// flagged as a "Missing in ST" discrepancy — it's still a real QB expense
+// though, so it stays in the QB Total KPI and the Item Split Account
+// spend chart; see the stNotRequired flag set in makeRow() below.
+const NO_ST_MATCH_ACCOUNTS=new Set(['supplies (shop)']);
 
 // Vendor Transactions source-of-truth sheet (Code.gs's VENDOR_TRANSACTIONS_SOURCE,
 // apiKey "vendorTransactions") — one tab per vendor, columns like
@@ -751,6 +767,7 @@ function normalizeRows(rawRows,source){
     const code=buildMatchCode(amount,date,vendor);
     const txnIdRaw=pickField(obj,TXN_ID_ALIASES);
     const itemSplitAccountRaw=isST?undefined:pickField(obj,ITEM_SPLIT_ACCOUNT_ALIASES);
+    const txnTypeRaw=isST?undefined:pickField(obj,TXN_TYPE_ALIASES);
     return {
       _i:i, source,
       vendor, vendorK:vendorKey(vendor),
@@ -760,6 +777,7 @@ function normalizeRows(rawRows,source){
       matchCode:code.key, matchCodeDisplay:code.display,
       txnId:txnIdRaw!=null&&txnIdRaw!==''?String(txnIdRaw).trim():'',
       itemSplitAccount:itemSplitAccountRaw!=null&&itemSplitAccountRaw!==''?String(itemSplitAccountRaw).trim():'',
+      txnType:txnTypeRaw!=null&&txnTypeRaw!==''?String(txnTypeRaw).trim():'',
       raw:obj
     };
   }).filter(r=>(r.amount!==0||r.billNumber||r.vendor!=='(Unknown Vendor)')&&!JUNK_VENDOR_RE.test(r.vendor.trim()));
@@ -784,6 +802,17 @@ function normalizeRows(rawRows,source){
 // ══════════════════════════════════════════════════════════════════════════
 function round2(n){ return Math.round(n*100)/100; }
 
+// QuickBooks Online deep-link base URL for a qb_only row's
+// Open-in-QuickBooks link. Most QB Bills-report rows open at /app/bill,
+// but a Vendor Credit is a different QBO transaction type and lives at
+// /app/vendorcredit instead — keyed off the QuickBooks Transaction Type
+// export column (captured as qbTxnType via TXN_TYPE_ALIASES above).
+function qboLinkBase(txnType){
+  return String(txnType||'').trim().toLowerCase()==='vendor credit'
+    ? 'https://qbo.intuit.com/app/vendorcredit?txnId='
+    : 'https://qbo.intuit.com/app/bill?txnId=';
+}
+
 function makeRow(status,qrow,srow){
   const qbAmount=qrow?qrow.amount:null, stAmount=srow?srow.amount:null;
   const diff=round2((qbAmount||0)-(stAmount||0));
@@ -794,7 +823,9 @@ function makeRow(status,qrow,srow){
     matchCode:(qrow&&qrow.matchCode)||(srow&&srow.matchCode)||'',
     matchCodeDisplay:(qrow&&qrow.matchCodeDisplay)||(srow&&srow.matchCodeDisplay)||'',
     qbTxnId:(qrow&&qrow.txnId)||'',
+    qbTxnType:(qrow&&qrow.txnType)||'',
     qbItemSplitAccount:(qrow&&qrow.itemSplitAccount)||'',
+    stNotRequired:status==='qb_only'&&NO_ST_MATCH_ACCOUNTS.has(((qrow&&qrow.itemSplitAccount)||'').trim().toLowerCase()),
     qbAmount, qbDate:qrow?qrow.date:null, qbDateISO:qrow?qrow.dateISO:null,
     stAmount, stDate:srow?srow.date:null, stDateISO:srow?srow.dateISO:null,
     diff,
@@ -909,6 +940,7 @@ function normalizeVendorTxnRows(rawRows){
       _i:i, vendor, vendorK:vendorKey(vendor),
       invoiceNumber, poNumber, amount,
       date, dateISO:isoDay(date),
+      matchCode:buildMatchCode(amount,date,vendor).key,
       raw:obj
     };
   }).filter(r=>r.invoiceNumber||r.poNumber||r.amount!==0);
@@ -960,16 +992,22 @@ function buildVendorCoverage(vendorRaw,qbRaw,stRaw){
   const qbRefs=new Set(qb.filter(r=>r.billNumber).map(r=>r.billNumber.toLowerCase()));
   const stRefs=new Set(st.filter(r=>r.billNumber).map(r=>r.billNumber.toLowerCase()));
   const hasRef=(refs,v)=>(v.invoiceNumber&&refs.has(v.invoiceNumber.toLowerCase()))||(v.poNumber&&refs.has(v.poNumber.toLowerCase()));
+  const qbCodes=new Set(qb.map(r=>r.matchCode));
+  const stCodes=new Set(st.map(r=>r.matchCode));
 
   const exactQB=vendorRows.map(v=>hasRef(qbRefs,v));
   const exactST=vendorRows.map(v=>hasRef(stRefs,v));
-  const fuzzyQB=fuzzyVendorCoverageMatch(qb,vendorRows,exactQB);
-  const fuzzyST=fuzzyVendorCoverageMatch(st,vendorRows,exactST);
+  const codeQB=vendorRows.map(v=>qbCodes.has(v.matchCode));
+  const codeST=vendorRows.map(v=>stCodes.has(v.matchCode));
+  const covQB=exactQB.map((e,i)=>e||codeQB[i]);
+  const covST=exactST.map((e,i)=>e||codeST[i]);
+  const fuzzyQB=fuzzyVendorCoverageMatch(qb,vendorRows,covQB);
+  const fuzzyST=fuzzyVendorCoverageMatch(st,vendorRows,covST);
 
   return vendorRows.map((v,i)=>({
     ...v,
-    inQB:exactQB[i]||fuzzyQB[i],
-    inST:exactST[i]||fuzzyST[i]
+    inQB:covQB[i]||fuzzyQB[i],
+    inST:covST[i]||fuzzyST[i]
   }));
 }
 
@@ -1207,8 +1245,26 @@ function passesNonDateFilters(r){
   const q=(document.getElementById('searchBox').value||'').toLowerCase().trim();
   if(vendSel.size>0&&!vendSel.has(r.vendor))return false;
   if(acctSel.size>0&&!acctSel.has(acctLabel(r)))return false;
-  if(status!=='all'&&r.status!==status)return false;
+  if(status==='date_split'){ if(!r._dateSplit)return false; }
+  else if(status!=='all'&&r.status!==status)return false;
   if(q&&!(r.vendor.toLowerCase().includes(q)||r.billNumber.toLowerCase().includes(q)||(r.matchCodeDisplay||'').toLowerCase().includes(q)))return false;
+  return true;
+}
+
+// A row is "in" the selected From/To range if EITHER its QuickBooks date
+// or its ServiceTitan date falls inside it — not just QuickBooks' (the old
+// displayDate rule preferred the QB date whenever a QB row existed, so a
+// bill ServiceTitan dated in the selected month but QuickBooks dated in an
+// adjacent one never counted here even though it's genuinely relevant to
+// this range, which is what made the trend chart's month totals — which
+// bucket each side by its own date — disagree with these KPIs). This one
+// row-inclusion rule feeds the audit table, every KPI, and every chart
+// below, so the fix applies consistently everywhere at once.
+function dateInRange(date,from,to){
+  if(!date)return false;
+  const diso=isoDay(date);
+  if(from&&diso<from)return false;
+  if(to&&diso>to)return false;
   return true;
 }
 
@@ -1217,19 +1273,22 @@ function applyAll(){
   const to=document.getElementById('dateTo').value;
 
   FILTERED=ALL_RECON.filter(r=>{
-    // BUGFIX: a row whose date never parsed (r.displayDate===null) used to
-    // skip the from/to check entirely and show up in EVERY date range,
-    // regardless of what was picked above — that's how a single bad-date
-    // row (e.g. a stray "TOTAL" footer line, or any bill with a malformed
-    // date cell) could blow up the KPI totals for a narrow filter like a
-    // single month. Now: if a date range is set, a row with no usable
-    // date is excluded (we can't confirm it belongs in range); it only
-    // shows when both From and To are cleared.
-    const diso=r.displayDate?isoDay(r.displayDate):null;
+    // BUGFIX (still applies): a row with no usable date at all (e.g. a
+    // stray "TOTAL" footer line, or a bill with a malformed date cell)
+    // is excluded whenever a date range is set, rather than showing up in
+    // every range — it only shows when both From and To are cleared.
+    const qbIn=dateInRange(r.qbDate,from,to);
+    const stIn=dateInRange(r.stDate,from,to);
+    // Flagged for the table/'date_split' filter/finfo count below: a row
+    // whose QB date and ST date land on opposite sides of the current
+    // range is exactly the kind of row that makes the KPI totals (which
+    // include it via either date) diverge from the trend chart's per-month
+    // bars (which bucket it strictly by each side's own date).
+    r._dateSplit=!!((from||to)&&r.qbDate&&r.stDate&&(qbIn!==stIn));
+    r._qbOutOfRange=!!((from||to)&&r.qbDate&&!qbIn);
+    r._stOutOfRange=!!((from||to)&&r.stDate&&!stIn);
     if(from||to){
-      if(!diso)return false;
-      if(from&&diso<from)return false;
-      if(to&&diso>to)return false;
+      if(!qbIn&&!stIn)return false;
     }
     return passesNonDateFilters(r);
   });
@@ -1238,7 +1297,8 @@ function applyAll(){
   renderKPIs();
   renderCharts();
   renderTable();
-  document.getElementById('finfo').textContent=`${ALL_RECON.length} total bills · ${FILTERED.length} in current filter`;
+  const splitCount=FILTERED.filter(r=>r._dateSplit).length;
+  document.getElementById('finfo').textContent=`${ALL_RECON.length} total bills · ${FILTERED.length} in current filter`+(splitCount?` · ${splitCount} span the QB/ST date boundary`:'');
 }
 
 function renderKPIs(){
@@ -1248,7 +1308,7 @@ function renderKPIs(){
   const stTotal=stRows.reduce((s,r)=>s+r.stAmount,0);
   const matched=FILTERED.filter(r=>r.status==='matched');
   const matchedAmt=matched.reduce((s,r)=>s+(r.qbAmount||r.stAmount||0),0);
-  const disc=FILTERED.filter(r=>r.status!=='matched');
+  const disc=FILTERED.filter(r=>r.status!=='matched'&&!r.stNotRequired);
   const discAmt=disc.reduce((s,r)=>s+Math.abs(r.diff),0);
 
   document.getElementById('kv-qb').textContent=fmtM(qbTotal);
@@ -1266,15 +1326,65 @@ function renderKPIs(){
 // ── Charts (created once in initCharts(), updated here) ──
 let trendChart,statusChart,vendorChart,itemAccountChart,membershipChart;
 const ACCT_PALETTE=['#2563eb','#0e93a8','#0fa572','#e08a1e','#dc2626','#7c3aed','#db2777','#0891b2','#65a30d','#ea580c','#4f46e5','#059669','#c026d3','#0d9488','#b91c1c'];
+// Shared cap on how many distinct Item Split Accounts get their own color
+// slot/legend entry before the rest are folded into "(Other Accounts)" —
+// used by both the trend chart's QuickBooks stack and the standalone
+// "QuickBooks by Item Split Account" pie chart below.
+const ACCT_CHART_LIMIT=15;
 function gridC(){ return 'rgba(10,37,64,.06)'; }
+// Whole-thousands, no-decimal formatter for the trend chart's bar-top
+// total labels — shorter than fmtM()'s one-decimal K ("$204K" vs
+// "$203.9K") so adjacent QB/ServiceTitan totals are less likely to
+// visually collide.
+function fmtK0(v){
+  if(v===null||v===undefined||isNaN(v))return '';
+  const sign=v<0?'-':''; const av=Math.abs(v);
+  return sign+'$'+Math.round(av/1000)+'K';
+}
+// Draws each stack's grand total centered above its bar (the QuickBooks
+// stack and the ServiceTitan bar separately) — Chart.js doesn't label
+// stacked-bar totals natively. Scoped to trendChart only via its own
+// plugins:[...] below, not registered globally. Small/light font + the
+// whole-thousands formatter above keep it from crowding out the legend
+// now that the QuickBooks side stacks many accounts.
+const totalLabelsPlugin={
+  id:'totalLabels',
+  afterDatasetsDraw(chart){
+    const {ctx}=chart;
+    const byStack=new Map();
+    chart.data.datasets.forEach((ds,i)=>{
+      if(!chart.isDatasetVisible(i))return;
+      const key=ds.stack||('_'+i);
+      if(!byStack.has(key))byStack.set(key,[]);
+      byStack.get(key).push(i);
+    });
+    ctx.save();
+    ctx.font='600 9px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle='#3d4f63';
+    ctx.textAlign='center';
+    ctx.textBaseline='bottom';
+    byStack.forEach(dsIndices=>{
+      const count=chart.data.labels.length;
+      for(let i=0;i<count;i++){
+        let total=0,x=null,topY=Infinity,any=false;
+        dsIndices.forEach(dsIndex=>{
+          const val=chart.data.datasets[dsIndex].data[i]||0;
+          total+=val;
+          const bar=chart.getDatasetMeta(dsIndex).data[i];
+          if(bar){ x=bar.x; topY=Math.min(topY,bar.y); any=true; }
+        });
+        if(any&&total>0)ctx.fillText(fmtK0(total),x,topY-3);
+      }
+    });
+    ctx.restore();
+  }
+};
 function initCharts(){
   trendChart=new Chart(document.getElementById('trendChart'),{
     type:'bar',
-    data:{labels:[],datasets:[
-      {label:'QuickBooks',data:[],backgroundColor:'#2563eb',borderRadius:4},
-      {label:'ServiceTitan',data:[],backgroundColor:'#0e93a8',borderRadius:4}
-    ]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}},tooltip:{callbacks:{label:c=>' '+c.dataset.label+': '+fmtFull(c.parsed.y)}}},scales:{x:{grid:{display:false},ticks:{font:{size:10}}},y:{grid:{color:gridC()},ticks:{callback:v=>fmtM(v),font:{size:10}}}}}
+    plugins:[totalLabelsPlugin],
+    data:{labels:[],datasets:[]},
+    options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:16}},plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}},tooltip:{callbacks:{label:c=>' '+c.dataset.label+': '+fmtFull(c.parsed.y)}}},scales:{x:{stacked:true,grid:{display:false},ticks:{font:{size:10}},categoryPercentage:0.7,barPercentage:0.85},y:{stacked:true,grid:{color:gridC()},ticks:{callback:v=>fmtM(v),font:{size:10}}}}}
   });
   statusChart=new Chart(document.getElementById('statusChart'),{
     type:'doughnut',
@@ -1308,30 +1418,59 @@ function renderCharts(){
   const selYear=parseInt(document.getElementById('trendYearSel').value,10)||nowY;
   const lastMonthIdx=selYear===nowY?new Date().getMonth():11; // YTD if current year, else full year
   const MONTH_LABELS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const monthTotals=[];
-  for(let m=0;m<=lastMonthIdx;m++)monthTotals.push({qb:0,st:0});
+
+  // QuickBooks side is stacked by real Item Split Account (acctLabel()),
+  // same convention as the "QuickBooks by Item Split Account" chart below,
+  // capped at ACCT_CHART_LIMIT accounts (by grand total) with the rest
+  // folded into "(Other Accounts)" so the palette doesn't run out/repeat.
+  // ServiceTitan stays a single bar — it has no item-split-account field.
+  const monthQbByAcct=[]; for(let m=0;m<=lastMonthIdx;m++)monthQbByAcct.push(new Map());
+  const monthSt=[]; for(let m=0;m<=lastMonthIdx;m++)monthSt.push(0);
+  const qbAcctGrandTotal=new Map();
   ALL_RECON.filter(passesNonDateFilters).forEach(r=>{
     if(r.qbDate&&r.qbDate.getFullYear()===selYear){
       const m=r.qbDate.getMonth();
-      if(m<=lastMonthIdx)monthTotals[m].qb+=r.qbAmount;
+      if(m<=lastMonthIdx){
+        const acct=acctLabel(r);
+        monthQbByAcct[m].set(acct,(monthQbByAcct[m].get(acct)||0)+r.qbAmount);
+        qbAcctGrandTotal.set(acct,(qbAcctGrandTotal.get(acct)||0)+r.qbAmount);
+      }
     }
     if(r.stDate&&r.stDate.getFullYear()===selYear){
       const m=r.stDate.getMonth();
-      if(m<=lastMonthIdx)monthTotals[m].st+=r.stAmount;
+      if(m<=lastMonthIdx)monthSt[m]+=r.stAmount;
     }
   });
+  let qbAccts=[...qbAcctGrandTotal.entries()].sort((a,b)=>b[1]-a[1]).map(t=>t[0]);
+  if(qbAccts.length>ACCT_CHART_LIMIT){
+    console.warn(`[Coolbreeze] Trend chart: stacking top ${ACCT_CHART_LIMIT} of ${qbAccts.length} QuickBooks accounts; the rest are folded into "(Other Accounts)".`);
+    const kept=new Set(qbAccts.slice(0,ACCT_CHART_LIMIT));
+    monthQbByAcct.forEach(mm=>{
+      let otherTotal=0;
+      [...mm.keys()].forEach(k=>{ if(!kept.has(k)){ otherTotal+=mm.get(k); mm.delete(k); } });
+      if(otherTotal)mm.set('(Other Accounts)',(mm.get('(Other Accounts)')||0)+otherTotal);
+    });
+    qbAccts=[...kept,'(Other Accounts)'];
+  }
   trendChart.data.labels=MONTH_LABELS.slice(0,lastMonthIdx+1);
-  trendChart.data.datasets[0].data=monthTotals.map(b=>+b.qb.toFixed(2));
-  trendChart.data.datasets[1].data=monthTotals.map(b=>+b.st.toFixed(2));
+  trendChart.data.datasets=[
+    ...qbAccts.map((a,i)=>({
+      label:a,
+      data:monthQbByAcct.map(mm=>+((mm.get(a)||0).toFixed(2))),
+      backgroundColor:a==='(Other Accounts)'?'#9fb3c2':ACCT_PALETTE[i%ACCT_PALETTE.length],
+      stack:'qb'
+    })),
+    {label:'ServiceTitan',data:monthSt.map(v=>+v.toFixed(2)),backgroundColor:'#0e93a8',borderRadius:4,stack:'st'}
+  ];
   trendChart.update();
 
   const counts={matched:0,mismatch:0,qb_only:0,st_only:0};
-  FILTERED.forEach(r=>counts[r.status]++);
+  FILTERED.forEach(r=>{ if(!r.stNotRequired)counts[r.status]++; });
   statusChart.data.datasets[0].data=[counts.matched,counts.mismatch,counts.qb_only,counts.st_only];
   statusChart.update();
 
   const vendMap=new Map();
-  FILTERED.filter(r=>r.status!=='matched').forEach(r=>{
+  FILTERED.filter(r=>r.status!=='matched'&&!r.stNotRequired).forEach(r=>{
     vendMap.set(r.vendor,(vendMap.get(r.vendor)||0)+Math.abs(r.diff));
   });
   const top=[...vendMap.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8);
@@ -1349,7 +1488,6 @@ function renderCharts(){
     acctMap.set(acct,(acctMap.get(acct)||0)+r.qbAmount);
   });
   const acctSorted=[...acctMap.entries()].sort((a,b)=>b[1]-a[1]);
-  const ACCT_CHART_LIMIT=15;
   if(acctSorted.length>ACCT_CHART_LIMIT)console.warn(`[Coolbreeze] Item Split Account chart: showing top ${ACCT_CHART_LIMIT} of ${acctSorted.length} accounts.`);
   const acctTop=acctSorted.slice(0,ACCT_CHART_LIMIT);
   itemAccountChart.data.labels=acctTop.map(t=>t[0]);
@@ -1382,7 +1520,7 @@ function renderTable(){
   const activeTh=document.getElementById('th-'+sortState.key);
   if(activeTh)activeTh.classList.add(sortState.dir==='asc'?'sort-asc':'sort-desc');
 
-  const sorted=[...FILTERED].sort((a,b)=>{
+  const sorted=[...FILTERED].filter(r=>!r.stNotRequired).sort((a,b)=>{
     const av=sortVal(a,sortState.key), bv=sortVal(b,sortState.key);
     if(av<bv)return sortState.dir==='asc'?-1:1;
     if(av>bv)return sortState.dir==='asc'?1:-1;
@@ -1402,11 +1540,11 @@ function renderTable(){
       <td>${r.billNumber||'—'}</td>
       <td class="col-matchcode" style="font-family:monospace;font-size:11.5px;color:var(--gray-500)">${r.matchCodeDisplay||'—'}</td>
       <td class="td-val">${r.qbAmount!==null?fmtFull(r.qbAmount):'—'}</td>
-      <td>${fmtDate(r.qbDate)}</td>
+      <td>${fmtDate(r.qbDate)}${r._qbOutOfRange?' <span title="Outside the selected range — included because the ServiceTitan date is inside it" style="color:var(--amber);cursor:help">⚠</span>':''}</td>
       <td class="td-val">${r.stAmount!==null?fmtFull(r.stAmount):'—'}</td>
-      <td>${fmtDate(r.stDate)}</td>
+      <td>${fmtDate(r.stDate)}${r._stOutOfRange?' <span title="Outside the selected range — included because the QuickBooks date is inside it" style="color:var(--amber);cursor:help">⚠</span>':''}</td>
       <td class="${diffCls}">${r.diff>0?'+':''}${fmtFull(r.diff)}</td>
-      <td>${r.status==='qb_only'&&r.qbTxnId?`<a class="btn-open-qbo" href="https://qbo.intuit.com/app/bill?txnId=${encodeURIComponent(r.qbTxnId)}" target="_blank" rel="noopener noreferrer">Open ↗</a>`:'—'}</td>
+      <td>${r.qbTxnId?`<a class="btn-open-qbo" href="${qboLinkBase(r.qbTxnType)}${encodeURIComponent(r.qbTxnId)}" target="_blank" rel="noopener noreferrer">Open ↗</a>`:'—'}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="10" style="text-align:center;color:var(--gray-500);padding:24px">No bills match the current filters.</td></tr>`;
 
@@ -1437,7 +1575,7 @@ function renderPagination(totalPages){
 function gotoPage(n){ curPage=n; renderTable(); }
 
 function exportXLSX(){
-  const rows=FILTERED.map(r=>({
+  const rows=FILTERED.filter(r=>!r.stNotRequired).map(r=>({
     Status:STATUS_META[r.status].label.replace(/^[✓⚠✕]\s*/,''),
     Vendor:r.vendor,
     'Bill / Ref #':r.billNumber,
@@ -1447,7 +1585,7 @@ function exportXLSX(){
     'ST Amount':r.stAmount,
     'ST Date':r.stDate?isoDay(r.stDate):'',
     Difference:r.diff,
-    'QuickBooks Link':(r.status==='qb_only'&&r.qbTxnId)?('https://qbo.intuit.com/app/bill?txnId='+r.qbTxnId):''
+    'QuickBooks Link':r.qbTxnId?(qboLinkBase(r.qbTxnType)+r.qbTxnId):''
   }));
   const ws=XLSX.utils.json_to_sheet(rows);
   const wb=XLSX.utils.book_new();
