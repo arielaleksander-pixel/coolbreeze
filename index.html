@@ -51,6 +51,7 @@
 :root {
   --navy:#0a2540; --navy-mid:#123a5c; --teal:#0e93a8; --cyan:#22d3ee; --accent:#22d3ee;
   --blue:#2563eb; --green:#0fa572; --amber:#e08a1e; --red:#dc2626;
+  --orange:#c4551d; --gold:#d9a441;
   --gray-50:#f6f9fb; --gray-100:#eef2f6; --gray-200:#dde4ec;
   --gray-500:#7a8ba0; --gray-700:#3d4f63; --text:#132537;
   --radius:10px; --shadow:0 2px 8px rgba(10,37,64,.09);
@@ -200,6 +201,29 @@ tbody td{padding:9px 12px;color:var(--gray-700);vertical-align:middle}
   header .hdr-btn,.fbar,.sidebar,.sidebar-toggle,.pg,.search-box,.btn-export{display:none!important}
   body{background:#fff}
 }
+
+/* ── JOBS TAB (added) ── */
+.section-lbl{margin-bottom:6px;font-size:11px;font-weight:700;color:var(--gray-500);letter-spacing:.08em;text-transform:uppercase}
+.row2b{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+@media(max-width:960px){.row2,.row2b{grid-template-columns:1fr}}
+.kpi.gold{border-color:var(--gold)} .kpi.gold::after{background:rgba(217,164,65,.08)}
+.td-cust{font-weight:600;color:var(--navy)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
+.st-link{display:inline-flex;align-items:center;gap:4px;background:var(--blue);color:#fff;border-radius:5px;padding:3px 10px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap}
+.status-pill{display:inline-block;padding:2px 9px;border-radius:10px;font-size:10.5px;font-weight:700}
+.status-pill.scheduled{background:rgba(37,99,235,.12);color:var(--blue)}
+.status-pill.hold{background:rgba(224,138,30,.14);color:var(--amber)}
+.status-pill.inprogress{background:rgba(196,85,29,.14);color:var(--orange)}
+.kpi-delta{font-size:11px;font-weight:700;margin-top:6px}
+.kpi-delta.up{color:var(--green)} .kpi-delta.down{color:var(--red)}
+
+/* ── ESTIMATES TAB (added) ── */
+.seg{display:inline-flex;background:var(--gray-100);border-radius:7px;padding:2px;gap:2px}
+.seg-btn{background:transparent;border:none;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:700;color:var(--gray-500);cursor:pointer;transition:all .15s;white-space:nowrap}
+.seg-btn:hover{color:var(--navy)}
+.seg-btn.active{background:#fff;color:var(--blue);box-shadow:0 1px 3px rgba(10,37,64,.15)}
+.panel-head-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px}
+.kpi.warn{border-color:var(--amber)} .kpi.warn::after{background:rgba(224,138,30,.08)}
 </style>
 </head>
 <body>
@@ -244,7 +268,14 @@ tbody td{padding:9px 12px;color:var(--gray-700);vertical-align:middle}
     <span class="sidebar-icon">🧾</span>
     <span class="sidebar-label">Reconciliation</span>
   </button>
-  <div class="sidebar-soon">More tabs coming soon</div>
+  <button class="sidebar-item" id="nav-db2" onclick="showDB(2)" title="Jobs Performance">
+    <span class="sidebar-icon">🔧</span>
+    <span class="sidebar-label">Jobs</span>
+  </button>
+  <button class="sidebar-item" id="nav-db3" onclick="showDB(3)" title="Estimates Pipeline">
+    <span class="sidebar-icon">📋</span>
+    <span class="sidebar-label">Estimates</span>
+  </button>
   <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" title="Expand/Collapse">⇆</button>
 </nav>
 
@@ -430,6 +461,310 @@ tbody td{padding:9px 12px;color:var(--gray-700);vertical-align:middle}
 </div>
 </div><!-- /viewMembership -->
 </div><!-- /db1 -->
+
+<!-- ══════════════════════════════════════════ -->
+<!-- DASHBOARD 2: JOBS PERFORMANCE (ServiceTitan) -->
+<!-- ══════════════════════════════════════════ -->
+<div class="db-panel" id="db2">
+<div class="fbar">
+  <label>From</label>
+  <input type="date" id="jobDateFrom" class="date-inp" onchange="applyJobFilters()">
+  <span class="fsep">&rarr;</span>
+  <label>To</label>
+  <input type="date" id="jobDateTo" class="date-inp" onchange="applyJobFilters()">
+
+  <label>Business Unit</label>
+  <div class="ms-wrap" id="buWrap">
+    <button class="ms-btn" id="buBtn" onclick="toggleMS('bu',event)">All Units ▾</button>
+    <div class="ms-panel" id="buPanel">
+      <input class="ms-search" type="text" placeholder="Search units…" oninput="filterMSItems('bu',this.value)">
+      <div class="ms-actions"><button onclick="selectAllMS('bu')">Select All</button><button onclick="clearMS('bu')">Clear</button></div>
+      <div id="buItems"></div>
+    </div>
+  </div>
+
+  <label>Technician</label>
+  <div class="ms-wrap" id="techWrap">
+    <button class="ms-btn" id="techBtn" onclick="toggleMS('tech',event)">All Techs ▾</button>
+    <div class="ms-panel" id="techPanel">
+      <input class="ms-search" type="text" placeholder="Search technician…" oninput="filterMSItems('tech',this.value)">
+      <div class="ms-actions"><button onclick="selectAllMS('tech')">Select All</button><button onclick="clearMS('tech')">Clear</button></div>
+      <div id="techItems"></div>
+    </div>
+  </div>
+
+  <label>Job Type</label>
+  <div class="ms-wrap" id="jtWrap">
+    <button class="ms-btn" id="jtBtn" onclick="toggleMS('jt',event)">All Types ▾</button>
+    <div class="ms-panel" id="jtPanel">
+      <input class="ms-search" type="text" placeholder="Search job types…" oninput="filterMSItems('jt',this.value)">
+      <div class="ms-actions"><button onclick="selectAllMS('jt')">Select All</button><button onclick="clearMS('jt')">Clear</button></div>
+      <div id="jtItems"></div>
+    </div>
+  </div>
+
+  <label>Campaign Category</label>
+  <div class="ms-wrap" id="catWrap">
+    <button class="ms-btn" id="catBtn" onclick="toggleMS('cat',event)">All Categories ▾</button>
+    <div class="ms-panel" id="catPanel">
+      <input class="ms-search" type="text" placeholder="Search categories…" oninput="filterMSItems('cat',this.value)">
+      <div class="ms-actions"><button onclick="selectAllMS('cat')">Select All</button><button onclick="clearMS('cat')">Clear</button></div>
+      <div id="catItems"></div>
+    </div>
+  </div>
+
+  <label>Compare</label>
+  <select class="compare-sel" id="jobCompareSel" onchange="jobCompareMode=this.value;applyJobFilters()">
+    <option value="none">No comparison</option>
+    <option value="last_period">vs Last Period</option>
+    <option value="last_month">vs Last Month (Same Period)</option>
+    <option value="last_month_full">vs Last Month (Full Month)</option>
+    <option value="last_quarter">vs Last Quarter</option>
+    <option value="last_year">vs Last Year</option>
+  </select>
+  <button class="btn-reset" onclick="resetJobFilters()">Reset</button>
+  <span class="finfo" id="job-finfo">Loading jobs…</span>
+</div>
+
+<div class="main">
+  <div class="section-lbl">✅ Completed</div>
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:12px;margin-bottom:18px">
+    <div class="kpi"><div class="kpi-ico">🔧</div><div class="kpi-lbl">Total Jobs <span class="tip-ic" data-tip="Count of jobs with a Completion Date in the selected date range, Business Unit, Technician, Job Type, and Campaign Category filters.">ⓘ</span></div><div class="kpi-val" id="jk-total">—</div><div class="kpi-sub">Completed jobs</div><div class="kpi-delta" id="jkd-total"></div></div>
+    <div class="kpi gold"><div class="kpi-ico">💰</div><div class="kpi-lbl">Total Revenue <span class="tip-ic" data-tip="Sum of Jobs Subtotal across the filtered completed jobs.">ⓘ</span></div><div class="kpi-val" id="jk-rev">—</div><div class="kpi-sub">Job revenue</div><div class="kpi-delta" id="jkd-rev"></div></div>
+    <div class="kpi"><div class="kpi-ico">👷</div><div class="kpi-lbl">Labor Cost <span class="tip-ic" data-tip="Total Labor Costs ÷ Total Revenue for the filtered completed jobs.">ⓘ</span></div><div class="kpi-val" id="jk-labor">—</div><div class="kpi-sub" id="jk-labor-sub">Labor</div><div class="kpi-delta" id="jkd-labor"></div></div>
+    <div class="kpi"><div class="kpi-ico">📦</div><div class="kpi-lbl">Material Cost <span class="tip-ic" data-tip="Materials + Equipment + PO/Bill Costs ÷ Total Revenue for the filtered completed jobs.">ⓘ</span></div><div class="kpi-val" id="jk-matl">—</div><div class="kpi-sub" id="jk-matl-sub">Materials</div><div class="kpi-delta" id="jkd-matl"></div></div>
+    <div class="kpi green"><div class="kpi-ico">📈</div><div class="kpi-lbl">Gross Margin <span class="tip-ic" data-tip="Sum of Jobs Gross Margin (Revenue minus job costs) across the filtered completed jobs.">ⓘ</span></div><div class="kpi-val" id="jk-gm">—</div><div class="kpi-sub">Revenue − costs</div><div class="kpi-delta" id="jkd-gm"></div></div>
+    <div class="kpi green"><div class="kpi-ico">%</div><div class="kpi-lbl">Gross Margin % <span class="tip-ic" data-tip="Total Gross Margin ÷ Total Revenue for the filtered completed jobs (not an average of each job's own margin %).">ⓘ</span></div><div class="kpi-val" id="jk-gmpct">—</div><div class="kpi-sub">Margin / revenue</div><div class="kpi-delta" id="jkd-gmpct"></div></div>
+    <div class="kpi"><div class="kpi-ico">📊</div><div class="kpi-lbl">Avg Job Value <span class="tip-ic" data-tip="Total Revenue ÷ Total Jobs for the filtered completed jobs.">ⓘ</span></div><div class="kpi-val" id="jk-avg">—</div><div class="kpi-sub">Revenue per job</div><div class="kpi-delta" id="jkd-avg"></div></div>
+  </div>
+
+  <div class="section-lbl">🔄 In Progress / Scheduled / On Hold</div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px">
+    <div class="kpi" style="border-left:4px solid var(--orange)"><div class="kpi-ico">⏳</div><div class="kpi-lbl">Jobs In Progress <span class="tip-ic" data-tip="Count of jobs whose status is Scheduled, Hold, or In Progress (not yet completed or canceled), filtered by Created Date since these jobs have no completion date yet.">ⓘ</span></div><div class="kpi-val" id="jk-prog">—</div><div class="kpi-sub">Scheduled / Hold / In Progress</div><div class="kpi-delta" id="jkd-prog"></div></div>
+    <div class="kpi gold" style="border-left:4px solid var(--orange)"><div class="kpi-ico">📈</div><div class="kpi-lbl">Revenue In Progress <span class="tip-ic" data-tip="Sum of Jobs Subtotal already accrued on the in-progress jobs above.">ⓘ</span></div><div class="kpi-val" id="jk-progrev">—</div><div class="kpi-sub">Accrued so far</div><div class="kpi-delta" id="jkd-progrev"></div></div>
+    <div class="kpi" style="border-left:4px solid var(--orange)"><div class="kpi-ico">🗓</div><div class="kpi-lbl">Avg In-Progress Value <span class="tip-ic" data-tip="Revenue In Progress ÷ Jobs In Progress.">ⓘ</span></div><div class="kpi-val" id="jk-progavg">—</div><div class="kpi-sub">Per open job</div></div>
+  </div>
+
+  <div class="section-lbl">✖ Canceled</div>
+  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px">
+    <div class="kpi red"><div class="kpi-ico">✖</div><div class="kpi-lbl">Canceled Jobs <span class="tip-ic" data-tip="Count of jobs with Status = Canceled, filtered by Created Date within the selected range, Business Unit, Technician, Job Type, and Campaign Category filters.">ⓘ</span></div><div class="kpi-val" id="jk-cancel">—</div><div class="kpi-sub">Job status = Canceled</div><div class="kpi-delta" id="jkd-cancel"></div></div>
+    <div class="kpi red"><div class="kpi-ico">💸</div><div class="kpi-lbl">Est. Value Lost <span class="tip-ic" data-tip="Sum of Jobs Estimate Sales Subtotal on canceled jobs — the quoted work that never billed.">ⓘ</span></div><div class="kpi-val" id="jk-cancelest">—</div><div class="kpi-sub">Quoted value on canceled jobs</div></div>
+  </div>
+
+  <div class="row2">
+    <div class="card"><div class="ct">Revenue Over Time ($K) <span class="tip-ic" data-tip="Always shows the full calendar year selected on the right — independent of the filters above. Defaults to the current year, Jan through this month (year-to-date). Hover a bar to see the same month last year and the YoY % change.">ⓘ</span><select id="jobRevYearSel" onchange="renderJobCharts()" class="chart-yr-sel" style="margin-left:auto"></select></div><div class="chart-wrap" style="height:250px"><canvas id="jobRevChart"></canvas></div></div>
+    <div class="card"><div class="ct">Jobs by Business Unit</div><div class="chart-wrap" style="height:250px"><canvas id="jobBuChart"></canvas></div></div>
+  </div>
+  <div class="row2b" style="margin-bottom:20px">
+    <div class="card"><div class="ct">Revenue by Installer ($K)</div><div class="chart-wrap" style="height:260px"><canvas id="jobTechRevChart"></canvas></div></div>
+    <div class="card"><div class="ct">Gross Margin % by Sold By <span class="tip-ic" data-tip="Grouped by the Sold By column — whoever quoted/sold the job, not who performed it. Bar shows blended gross margin % (top 10 by total GM $). Hover a bar for that person's revenue and gross margin in dollars.">ⓘ</span></div><div class="chart-wrap" style="height:260px"><canvas id="jobTechGmChart"></canvas></div></div>
+  </div>
+  <div style="margin-bottom:20px">
+    <div class="card"><div class="ct">Jobs by Campaign Category</div><div class="chart-wrap" style="height:230px"><canvas id="jobCatChart"></canvas></div></div>
+  </div>
+
+  <div class="tcard">
+    <div class="thead-row">
+      <div class="tcard-title">Jobs — Full Detail (Completed)</div>
+      <div class="thead-right">
+        <input class="search-box" type="text" id="jobSearch" placeholder="Search customer or job…" oninput="applyJobFilters()">
+        <span class="tcnt" id="job-count">— jobs</span>
+        <button class="btn-export" onclick="exportJobXLSX()">⬇ Export Excel</button>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th>#</th>
+        <th onclick="sortJob('d8')" id="jth-d8" class="sort-desc">Completion Date</th>
+        <th onclick="sortJob('o')" id="jth-o">Job #</th>
+        <th onclick="sortJob('c')" id="jth-c">Customer</th>
+        <th onclick="sortJob('b')" id="jth-b">Business Unit</th>
+        <th onclick="sortJob('t')" id="jth-t">Technician</th>
+        <th onclick="sortJob('jt')" id="jth-jt">Job Type</th>
+        <th onclick="sortJob('cat')" id="jth-cat">Campaign Category</th>
+        <th onclick="sortJob('rev')" id="jth-rev">Revenue</th>
+        <th onclick="sortJob('gm')" id="jth-gm">Gross Margin</th>
+        <th>ST Link</th>
+      </tr></thead>
+      <tbody id="jobBody"></tbody></table>
+    </div>
+    <div class="pg" id="jobPagination"></div>
+  </div>
+
+  <div class="tcard" style="border-top:3px solid var(--orange)">
+    <div class="thead-row">
+      <div class="tcard-title" style="color:var(--orange)">⏳ Jobs In Progress / Scheduled / On Hold</div>
+      <div class="thead-right">
+        <span class="tcnt" id="job-prog-count">— jobs</span>
+        <button class="btn-export" onclick="exportJobProgressXLSX()">⬇ Export Excel</button>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th>#</th>
+        <th onclick="sortJobProg('cd8')" id="jpth-cd8" class="sort-desc">Created Date</th>
+        <th>Job #</th>
+        <th>Customer</th>
+        <th>Business Unit</th>
+        <th>Technician</th>
+        <th>Job Type</th>
+        <th>Status</th>
+        <th onclick="sortJobProg('rev')" id="jpth-rev">Revenue</th>
+        <th>Last Appt Date</th>
+        <th>ST Link</th>
+      </tr></thead>
+      <tbody id="jobProgressBody"></tbody></table>
+    </div>
+    <div class="pg" id="jobProgressPagination"></div>
+  </div>
+
+  <div class="tcard" style="border-top:3px solid var(--red)">
+    <div class="thead-row">
+      <div class="tcard-title" style="color:var(--red)">✖ Cancellations</div>
+      <div class="thead-right">
+        <span class="tcnt" id="job-cancel-count">— jobs</span>
+        <button class="btn-export" onclick="exportJobCanceledXLSX()">⬇ Export Excel</button>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th>#</th>
+        <th onclick="sortJobCanceled('cd8')" id="jcth-cd8" class="sort-desc">Created Date</th>
+        <th>Job #</th>
+        <th>Customer</th>
+        <th>Business Unit</th>
+        <th>Technician</th>
+        <th>Job Type</th>
+        <th>Cancel Reason</th>
+        <th onclick="sortJobCanceled('estSales')" id="jcth-est">Est. Value Lost</th>
+        <th>ST Link</th>
+      </tr></thead>
+      <tbody id="jobCanceledBody"></tbody></table>
+    </div>
+    <div class="pg" id="jobCanceledPagination"></div>
+  </div>
+</div>
+</div><!-- /db2 -->
+
+<div class="db-panel" id="db3">
+<div class="fbar">
+  <label>From</label>
+  <input type="date" id="estDateFrom" class="date-inp" onchange="applyEstFilters()">
+  <span class="fsep">&rarr;</span>
+  <label>To</label>
+  <input type="date" id="estDateTo" class="date-inp" onchange="applyEstFilters()">
+
+  <label>Business Unit</label>
+  <div class="ms-wrap" id="estBizWrap">
+    <button class="ms-btn" id="estBizBtn" onclick="toggleMS('estBiz',event)">All Units ▾</button>
+    <div class="ms-panel" id="estBizPanel">
+      <input class="ms-search" type="text" placeholder="Search units…" oninput="filterMSItems('estBiz',this.value)">
+      <div class="ms-actions"><button onclick="selectAllMS('estBiz')">Select All</button><button onclick="clearMS('estBiz')">Clear</button></div>
+      <div id="estBizItems"></div>
+    </div>
+  </div>
+
+  <label>Technician</label>
+  <div class="ms-wrap" id="estTechWrap">
+    <button class="ms-btn" id="estTechBtn" onclick="toggleMS('estTech',event)">All Techs ▾</button>
+    <div class="ms-panel" id="estTechPanel">
+      <input class="ms-search" type="text" placeholder="Search technicians…" oninput="filterMSItems('estTech',this.value)">
+      <div class="ms-actions"><button onclick="selectAllMS('estTech')">Select All</button><button onclick="clearMS('estTech')">Clear</button></div>
+      <div id="estTechItems"></div>
+    </div>
+  </div>
+
+  <label>Job Campaign</label>
+  <div class="ms-wrap" id="estCampaignWrap">
+    <button class="ms-btn" id="estCampaignBtn" onclick="toggleMS('estCampaign',event)">All Campaigns ▾</button>
+    <div class="ms-panel" id="estCampaignPanel">
+      <input class="ms-search" type="text" placeholder="Search job campaigns…" oninput="filterMSItems('estCampaign',this.value)">
+      <div class="ms-actions"><button onclick="selectAllMS('estCampaign')">Select All</button><button onclick="clearMS('estCampaign')">Clear</button></div>
+      <div id="estCampaignItems"></div>
+    </div>
+  </div>
+
+  <label>Sold Then Canceled</label>
+  <select id="estCanceledSel" class="compare-sel" onchange="applyEstFilters()">
+    <option value="">All</option>
+    <option value="yes">Yes</option>
+    <option value="no">No</option>
+  </select>
+
+  <div class="seg" id="estPotentialBasisSeg">
+    <button type="button" class="seg-btn active" data-basis="highest" onclick="setEstPotentialBasis('highest')">Potential: Highest Quote</button>
+    <button type="button" class="seg-btn" data-basis="median" onclick="setEstPotentialBasis('median')">Potential: Median Quote</button>
+  </div>
+  <button class="btn-reset" onclick="resetEstFilters()">Reset</button>
+  <span class="finfo" id="est-finfo">Loading estimates…</span>
+</div>
+
+<div class="main">
+  <div class="section-lbl">Key metrics <span class="tip-ic tip-ic-dark" id="basisHintEst" style="text-transform:none;letter-spacing:normal;font-weight:400"></span></div>
+  <div class="kpi-grid-est" id="kpiGridEst" style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:20px"></div>
+
+  <div class="row2">
+    <div class="card">
+      <div class="panel-head-row">
+        <div class="ct" style="margin-bottom:0">Potential Revenue vs Converted <span class="tip-ic" data-tip="Potential Revenue and Total Converted, computed per period, grouped by the selected granularity.">ⓘ</span></div>
+        <div class="seg" id="estWeeklyGranularitySeg">
+          <button type="button" class="seg-btn" data-g="daily" onclick="setEstWeeklyGranularity('daily')">Daily</button>
+          <button type="button" class="seg-btn active" data-g="weekly" onclick="setEstWeeklyGranularity('weekly')">Weekly</button>
+          <button type="button" class="seg-btn" data-g="monthly" onclick="setEstWeeklyGranularity('monthly')">Monthly</button>
+        </div>
+      </div>
+      <div class="chart-wrap" style="height:280px"><canvas id="estWeeklyChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="panel-head-row">
+        <div class="ct" style="margin-bottom:0">Converted % <span class="tip-ic" data-tip="Total Converted ÷ Potential Revenue for each period. Tracks the tab's core conversion rate over time.">ⓘ</span></div>
+        <div class="seg" id="estPctGranularitySeg">
+          <button type="button" class="seg-btn active" data-g="daily" onclick="setEstPctGranularity('daily')">Daily</button>
+          <button type="button" class="seg-btn" data-g="weekly" onclick="setEstPctGranularity('weekly')">Weekly</button>
+          <button type="button" class="seg-btn" data-g="monthly" onclick="setEstPctGranularity('monthly')">Monthly</button>
+        </div>
+      </div>
+      <div class="chart-wrap" style="height:280px"><canvas id="estDailyPctChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="row2b" style="margin-bottom:20px">
+    <div class="card"><div class="ct">Potential Revenue Converted % by Technician <span class="tip-ic" data-tip="For each technician (Sold estimates credited to Sold By; not-yet-sold quotes credited to Created By), Total Converted ÷ Potential Revenue.">ⓘ</span></div><div class="chart-wrap" style="height:340px"><canvas id="estTechChart"></canvas></div></div>
+    <div class="card"><div class="ct">Average Selling Ticket by Technician <span class="tip-ic" data-tip="For each technician, Total Sold dollars (via Sold By) ÷ count of Sold estimates. Technicians with zero Sold estimates in range are excluded.">ⓘ</span></div><div class="chart-wrap" style="height:340px"><canvas id="estTechAvgTicketChart"></canvas></div></div>
+  </div>
+
+  <div class="tcard">
+    <div class="thead-row">
+      <div class="tcard-title">Customer Breakdown</div>
+      <div class="thead-right">
+        <input class="search-box" type="text" id="estCustSearch" placeholder="Search customer, job #, job type…" oninput="renderEstCustomerTable()">
+        <span class="tcnt" id="estCustCount">— jobs</span>
+        <button class="btn-export" onclick="exportEstCustomerXLSX()">⬇ Export Excel</button>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th onclick="sortEstCust('customer')" id="estCustTh-customer">Customer</th>
+          <th onclick="sortEstCust('potential')" id="estCustTh-potential" class="sort-desc">Potential Revenue</th>
+          <th onclick="sortEstCust('converted')" id="estCustTh-converted">Converted</th>
+          <th onclick="sortEstCust('jobNumber')" id="estCustTh-jobNumber">Job Number</th>
+          <th onclick="sortEstCust('jobType')" id="estCustTh-jobType">Parent Job Type</th>
+          <th onclick="sortEstCust('createdOn')" id="estCustTh-createdOn">Estimate Created</th>
+          <th onclick="sortEstCust('technician')" id="estCustTh-technician">Technician</th>
+          <th>ST Link</th>
+        </tr></thead>
+        <tbody id="estCustBody"></tbody>
+        <tfoot id="estCustFoot"></tfoot>
+      </table>
+    </div>
+    <div class="pg" id="estCustPagination"></div>
+  </div>
+
+  <div class="section-lbl">Top Sales Day by Business Unit</div>
+  <div class="kpi-grid-est" id="topDayGridEst" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:10px"></div>
+</div>
+</div><!-- /db3 -->
 
 </div><!-- /app-shell -->
 
@@ -1825,5 +2160,1263 @@ document.getElementById('dateFrom').value=monthStartISO();
 document.getElementById('dateTo').value=todayISO();
 document.addEventListener('DOMContentLoaded',loadAndInit);
 </script>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════
+// JOBS TAB (added) — mirrors the Best Plumber "Jobs" tab, adapted to
+// Coolbreeze's single-file architecture and reusing its existing helpers
+// (sf/sd/isoDay/fmtDate/fmtM/todayISO/monthStartISO/getCached/setCache/
+// CACHE_TTL/showDB/toggleSidebar) instead of redefining them. Unlike the
+// Bills/Membership tab above, this data comes straight from an Azure Blob
+// (SAS URL) via fetch()+XLSX, not through the Google Apps Script Web App —
+// same pattern Best Plumber's own Jobs tab uses. Loads independently of the
+// Bills tab (own cache key, own DOMContentLoaded hook) so a hiccup in one
+// data source never blocks the other.
+// ══════════════════════════════════════════════════════════════════════════
+const JOBS_CONFIG = {
+  // Current-year Jobs export.
+  sasUrl: "https://coolbreeze.blob.core.windows.net/coolbreeze/Jobs%20Service%20Titan.xlsx?sp=r&st=2026-09-12T00:41:23Z&se=2030-09-12T08:56:23Z&spr=https&sv=2026-02-06&sr=b&sig=CoMgl0KuhYbTx6N6anD3P2w4%2BmZavDMgcTPjL9tTiWI%3D",
+  // Previous-year Jobs export — merged into ALL_JOBS alongside the current
+  // one (see processJobs). Optional: if this ever comes back empty/missing,
+  // fetchJobsPrevYearBlob() degrades non-fatally and the current-year data
+  // still loads on its own, same as Best Plumber's multi-blob Jobs tab.
+  sasUrlPrevYear: "https://coolbreeze.blob.core.windows.net/coolbreeze/Jobs%20Service%20Titan%20Previous%20Year.xlsx?sp=r&st=2026-09-12T01:07:42Z&se=2030-09-12T09:22:42Z&spr=https&sv=2026-02-06&sr=b&sig=sMbUxA7eNc0qbTnTkihJLRmpA1TvHl%2BmG5le5c7M3Ac%3D",
+};
+const REPORT_KEY_JOBS = 'jobsServiceTitan'; // used with the existing getCached/setCache('cb_'+report, ...)
+const REPORT_KEY_JOBS_PREV = 'jobsServiceTitanPrevYear';
+
+function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+// ── COMPARISON (period-over-period deltas) — own state, distinct from the
+// Bills tab (which has no such feature) ──
+let jobCompareMode='none';
+function daysInUTCMonth(y,m){return new Date(Date.UTC(y,m+1,0)).getUTCDate();}
+function shiftUTCMonths(d,delta){
+  const y=d.getUTCFullYear(),m=d.getUTCMonth(),day=d.getUTCDate();
+  const wasLastDay=day===daysInUTCMonth(y,m);
+  const total=y*12+m+delta;
+  const ny=Math.floor(total/12),nm=((total%12)+12)%12;
+  const dim=daysInUTCMonth(ny,nm);
+  const newDay=wasLastDay?dim:Math.min(day,dim);
+  return new Date(Date.UTC(ny,nm,newDay));
+}
+function getJobCompareDates(from,to){
+  if(jobCompareMode==='none')return null;
+  const f=from?new Date(from):null,t=to?new Date(to):new Date();
+  if(!f)return null;
+  if(jobCompareMode==='last_period'){
+    const dur=t-f;
+    const cTo=new Date(f.getTime()-86400000);
+    const cFrom=new Date(cTo.getTime()-dur);
+    return{from:cFrom.toISOString().slice(0,10),to:cTo.toISOString().slice(0,10)};
+  }
+  if(jobCompareMode==='last_month'){
+    const cFrom=shiftUTCMonths(f,-1),cTo=shiftUTCMonths(t,-1);
+    return{from:cFrom.toISOString().slice(0,10),to:cTo.toISOString().slice(0,10)};
+  }
+  if(jobCompareMode==='last_month_full'){
+    const pm=shiftUTCMonths(f,-1);
+    const py=pm.getUTCFullYear(),pmi=pm.getUTCMonth();
+    const cFrom=new Date(Date.UTC(py,pmi,1));
+    const cTo=new Date(Date.UTC(py,pmi,daysInUTCMonth(py,pmi)));
+    return{from:cFrom.toISOString().slice(0,10),to:cTo.toISOString().slice(0,10)};
+  }
+  if(jobCompareMode==='last_quarter'){
+    const cFrom=shiftUTCMonths(f,-3),cTo=shiftUTCMonths(t,-3);
+    return{from:cFrom.toISOString().slice(0,10),to:cTo.toISOString().slice(0,10)};
+  }
+  if(jobCompareMode==='last_year'){
+    const cFrom=shiftUTCMonths(f,-12),cTo=shiftUTCMonths(t,-12);
+    return{from:cFrom.toISOString().slice(0,10),to:cTo.toISOString().slice(0,10)};
+  }
+  return null;
+}
+function jobFmtDelta(curr,prev,prevFmt){
+  if(!prev||jobCompareMode==='none')return'';
+  const pct=(curr-prev)/Math.abs(prev)*100;
+  const absP=Math.abs(pct);
+  if(absP<0.05)return'';
+  const cls=pct>0?'up':'down',arrow=pct>0?'▲':'▼';
+  const lbl=jobCompareMode==='last_period'?'last period':jobCompareMode==='last_month'?'same period last month':jobCompareMode==='last_month_full'?'last month (full)':jobCompareMode==='last_quarter'?'last quarter':'last year';
+  const prevStr=prevFmt?`<br><span style="opacity:.6;font-weight:500;font-size:10px">was ${prevFmt}</span>`:'';
+  return`<div class="kpi-delta ${cls}">${arrow} ${absP.toFixed(1)}% vs ${lbl}${prevStr}</div>`;
+}
+function jobFmtDeltaPts(curr,prev,prevFmt){
+  if(!prev||jobCompareMode==='none')return'';
+  const diff=curr-prev;
+  const absD=Math.abs(diff);
+  if(absD<0.05)return'';
+  const cls=diff>0?'up':'down',arrow=diff>0?'▲':'▼';
+  const lbl=jobCompareMode==='last_period'?'last period':jobCompareMode==='last_month'?'same period last month':jobCompareMode==='last_month_full'?'last month (full)':jobCompareMode==='last_quarter'?'last quarter':'last year';
+  const prevStr=prevFmt?`<br><span style="opacity:.6;font-weight:500;font-size:10px">was ${prevFmt}</span>`:'';
+  return`<div class="kpi-delta ${cls}">${arrow} ${absD.toFixed(1)} pts vs ${lbl}${prevStr}</div>`;
+}
+function jobCmpRangeLabel(from,to){
+  const cmp=getJobCompareDates(from,to);
+  if(!cmp||jobCompareMode==='none')return'';
+  const s=d=>{const p=d.split('-');return p[1]+'/'+p[2]+'/'+p[0];};
+  return` · compare period: ${s(cmp.from)} → ${s(cmp.to)}`;
+}
+
+// ── STATUS BUCKETS ──
+function isCompletedJob(status){return String(status||'').trim().toLowerCase()==='completed';}
+function isCanceledJob(status){return String(status||'').trim().toLowerCase()==='canceled';}
+// ServiceTitan's export fills optional date fields (Completion Date, Last
+// Appt Date) with a literal "2000-01-01T00:00:00.000Z" (occasionally
+// "1999-12-31T00:00:00.000Z", the same instant in a negative UTC offset)
+// text sentinel instead of leaving the cell blank when a job has no such
+// date yet — confirmed against the real Coolbreeze export (403 of 2939
+// rows). sd() parses that sentinel into a "valid" but meaningless Date, so
+// treat anything before 2010 (long before this dashboard's data starts) as
+// no date at all, same as a blank cell.
+function jobDate(v){ const d=sd(v); return (d&&d.getUTCFullYear()<2010)?null:d; }
+function isInProgressJob(status){return !isCompletedJob(status)&&!isCanceledJob(status)&&String(status||'').trim()!=='';}
+
+// ── PARSE JOBS WORKBOOK — same column-alias convention as Best Plumber's
+// Jobs tab (confirmed against the real Coolbreeze "Jobs Service Titan.xlsx"
+// export: every alias below resolved on the first try, no unmapped fields).
+// Dates go through Coolbreeze's own sd()/isoDay() rather than a separate
+// date parser, since those already handle Date objects, Excel serials, and
+// strings the same way this file's Bills tab already relies on. ──
+let ALL_JOBS=[];
+function parseJobsRows(rows){
+  if(!rows||rows.length<2)return [];
+  const headers=rows[0].map(h=>String(h||'').trim());
+  const C={};headers.forEach((h,i)=>{if(h)C[h]=i;});
+  function col(...names){for(const n of names){if(C[n]!=null)return C[n];}return -1;}
+  const COL={
+    job: col('Job #','Job Number','JobNumber'),
+    jt: col('Job Type','JobType'),
+    cat: col('Campaign Category','CampaignCategory'),
+    bu: col('Business Unit','BU','Location'),
+    completion: col('Completion Date','Completed Date','Close Date'),
+    campaign: col('Job Campaign','Campaign'),
+    callCampaign: col('Call Campaign'),
+    subtotal: col('Jobs Subtotal','Job Subtotal'),
+    created: col('Created Date','Created On','Date Created'),
+    status: col('Status','Job Status'),
+    cancelReason: col('Cancel Reason','Cancellation Reason'),
+    lastAppt: col('Last Appt Date','Last Appointment Date'),
+    hours: col('Total Hours Worked','Total Hours'),
+    bookedBy: col('Booked By'),
+    balance: col('Balance'),
+    jobsPayments: col('Jobs Payments'),
+    soldOn: col('Sold On'),
+    soldBy: col('Sold By'),
+    tech: col('Primary Technician','Technician','Tech'),
+    customer: col('Customer Name','Customer'),
+    city: col('Location City'),
+    estimates: col('Estimates'),
+    estSales: col('Jobs Estimate Sales Subtotal','Sales Subtotal'),
+    matl: col('Materials + Equip. + PO/Bill Costs','Material Cost'),
+    payrollAdj: col('Payroll Adjustments'),
+    laborPay: col('Labor Pay'),
+    laborBurden: col('Labor Burden'),
+    labor: col('Total Labor Costs','Labor Cost'),
+    totalRev: col('Jobs Total Revenue'),
+    gm: col('Jobs Gross Margin'),
+    gmPct: col('Jobs Gross Margin %'),
+    invoice: col('Invoice #'),
+  };
+  const missing=Object.entries(COL).filter(([k,v])=>v===-1).map(([k])=>k);
+  if(missing.length)console.warn('[Jobs] Unmapped columns:',missing,'— detected headers:',headers);
+  const out=[];
+  for(const r of rows.slice(1)){
+    const status=String(r[COL.status]||'').trim();
+    const bu=String(r[COL.bu]||'').trim();
+    const job=String(r[COL.job]||'').trim();
+    // ServiceTitan export can append a trailing summary/total row with a
+    // blank Status/Business Unit — skip anything that isn't a real job row.
+    if(!status||!bu||!job)continue;
+    const d8=isoDay(jobDate(r[COL.completion]));
+    const cd8=isoDay(jobDate(r[COL.created]));
+    out.push({
+      o:job, jt:String(r[COL.jt]||'').trim()||'Uncategorized',
+      cat:String(r[COL.cat]||'').trim()||'Uncategorized',
+      b:bu, d8, cd8,
+      campaign:String(r[COL.campaign]||''), callCampaign:String(r[COL.callCampaign]||''),
+      rev:sf(r[COL.subtotal]), status,
+      cancelReason:String(r[COL.cancelReason]||''),
+      laDate:jobDate(r[COL.lastAppt]),
+      hours:sf(r[COL.hours]), bookedBy:String(r[COL.bookedBy]||''),
+      balance:sf(r[COL.balance]), jobPay:sf(r[COL.jobsPayments]),
+      soldBy:String(r[COL.soldBy]||''),
+      t:String(r[COL.tech]||'').trim()||'Unassigned',
+      c:String(r[COL.customer]||'').trim()||'—',
+      city:String(r[COL.city]||''),
+      estimates:sf(r[COL.estimates]), estSales:sf(r[COL.estSales]),
+      matl:sf(r[COL.matl]), payrollAdj:sf(r[COL.payrollAdj]),
+      laborPay:sf(r[COL.laborPay]), laborBurden:sf(r[COL.laborBurden]),
+      labor:sf(r[COL.labor]), totalRev:sf(r[COL.totalRev]),
+      gm:sf(r[COL.gm]), gmPct:sf(r[COL.gmPct]),
+      invoice:String(r[COL.invoice]||''),
+    });
+  }
+  return out;
+}
+function processJobs(rows,prevYearRows){
+  ALL_JOBS=parseJobsRows(rows).concat(prevYearRows?parseJobsRows(prevYearRows):[]);
+  console.log('[Jobs] Parsed',ALL_JOBS.length,'jobs (including previous-year rows if provided)');
+}
+
+// ── MULTI-SELECT FILTERS (Business Unit / Technician / Job Type / Campaign
+// Category) — same generic pattern as Best Plumber's Jobs tab; Coolbreeze's
+// own Vendor/Item-Split-Account multi-selects use a separate bespoke
+// implementation (populateVendMS/populateAcctMS) so there's no collision. ──
+const MS_OPTS={bu:[],tech:[],jt:[],cat:[]};
+const MS_SEL={bu:new Set(),tech:new Set(),jt:new Set(),cat:new Set()};
+const MS_LABEL={bu:'All Units',tech:'All Techs',jt:'All Types',cat:'All Categories'};
+function buildJobMSOptions(){
+  MS_OPTS.bu=[...new Set(ALL_JOBS.map(j=>j.b))].sort();
+  MS_OPTS.tech=[...new Set(ALL_JOBS.map(j=>j.t))].sort();
+  MS_OPTS.jt=[...new Set(ALL_JOBS.map(j=>j.jt))].sort();
+  MS_OPTS.cat=[...new Set(ALL_JOBS.map(j=>j.cat))].sort();
+  Object.keys(MS_OPTS).forEach(k=>renderMSItems(k));
+  buildJobRevYearOptions();
+}
+function buildJobRevYearOptions(){
+  const sel=document.getElementById('jobRevYearSel');
+  if(!sel)return;
+  const years=[...new Set(ALL_JOBS.filter(j=>isCompletedJob(j.status)&&j.d8).map(j=>j.d8.slice(0,4)))];
+  const curYear=String(new Date().getFullYear());
+  if(!years.includes(curYear))years.push(curYear);
+  years.sort((a,b)=>b.localeCompare(a));
+  const prevVal=sel.value;
+  sel.innerHTML=years.map(y=>`<option value="${y}">${y}</option>`).join('');
+  sel.value=years.includes(prevVal)?prevVal:curYear;
+}
+function renderMSItems(key,filterText){
+  const box=document.getElementById(key+'Items');
+  if(!box)return;
+  const ft=(filterText||'').toLowerCase();
+  const opts=MS_OPTS[key].filter(o=>!ft||o.toLowerCase().includes(ft));
+  box.innerHTML=opts.length?opts.map(o=>`<label class="ms-item"><input type="checkbox" ${MS_SEL[key].has(o)?'checked':''} onchange="toggleMSItem('${key}','${o.replace(/'/g,"\\'")}',this.checked)"><span>${esc(o)}</span></label>`).join(''):'<div class="ms-empty">No matches</div>';
+}
+function toggleMSItem(key,val,checked){checked?MS_SEL[key].add(val):MS_SEL[key].delete(val);updateMSBtn(key);applyJobFilters();}
+function updateMSBtn(key){
+  const btn=document.getElementById(key+'Btn');
+  if(!btn)return;
+  const n=MS_SEL[key].size;
+  btn.textContent=n>0?`${n} selected ▾`:MS_LABEL[key]+' ▾';
+  btn.classList.toggle('has-sel',n>0);
+}
+function toggleMS(key,ev){
+  ev.stopPropagation();
+  document.querySelectorAll('.ms-panel.open').forEach(p=>{if(p.id!==key+'Panel')p.classList.remove('open');});
+  document.querySelectorAll('.ms-btn.open').forEach(b=>{if(b.id!==key+'Btn')b.classList.remove('open');});
+  document.getElementById(key+'Panel').classList.toggle('open');
+  document.getElementById(key+'Btn').classList.toggle('open');
+}
+function filterMSItems(key,val){renderMSItems(key,val);}
+function selectAllMS(key){MS_OPTS[key].forEach(o=>MS_SEL[key].add(o));renderMSItems(key);updateMSBtn(key);applyJobFilters();}
+function clearMS(key){MS_SEL[key].clear();renderMSItems(key);updateMSBtn(key);applyJobFilters();}
+document.addEventListener('click',e=>{
+  if(!e.target.closest('.ms-wrap')){
+    document.querySelectorAll('.ms-panel.open').forEach(p=>p.classList.remove('open'));
+    document.querySelectorAll('.ms-btn.open').forEach(b=>b.classList.remove('open'));
+  }
+});
+
+// ── FILTER + KPI + CHART + TABLE STATE ──
+let jobFiltered=[],jobProgress=[],jobCanceled=[];
+let jobSortKey='d8',jobSortDir=-1,jobPage=1;
+let jobProgSortKey='cd8',jobProgSortDir=-1,jobProgressPage=1;
+let jobCancelSortKey='cd8',jobCancelSortDir=-1,jobCanceledPage=1;
+const JOB_PAGE_SIZE=25;
+
+function applyJobFilters(){
+  const from=document.getElementById('jobDateFrom').value,to=document.getElementById('jobDateTo').value;
+  const q=(document.getElementById('jobSearch').value||'').toLowerCase();
+  const matchCommon=j=>{
+    if(MS_SEL.bu.size>0&&!MS_SEL.bu.has(j.b))return false;
+    if(MS_SEL.tech.size>0&&!MS_SEL.tech.has(j.t))return false;
+    if(MS_SEL.jt.size>0&&!MS_SEL.jt.has(j.jt))return false;
+    if(MS_SEL.cat.size>0&&!MS_SEL.cat.has(j.cat))return false;
+    if(q&&!j.c.toLowerCase().includes(q)&&!j.o.toLowerCase().includes(q)&&!(j.t||'').toLowerCase().includes(q))return false;
+    return true;
+  };
+  jobFiltered=ALL_JOBS.filter(j=>{
+    if(!isCompletedJob(j.status))return false;
+    if((from||to)&&!j.d8)return false;
+    if(j.d8&&from&&j.d8<from)return false;
+    if(j.d8&&to&&j.d8>to)return false;
+    return matchCommon(j);
+  });
+  jobFiltered.sort((a,b)=>{const va=a[jobSortKey]!=null?a[jobSortKey]:'',vb=b[jobSortKey]!=null?b[jobSortKey]:'';if(typeof va==='number')return(va-vb)*jobSortDir;return String(va).localeCompare(String(vb))*jobSortDir;});
+  jobPage=1;
+
+  jobProgress=ALL_JOBS.filter(j=>{
+    if(!isInProgressJob(j.status))return false;
+    if((from||to)&&!j.cd8)return false;
+    if(j.cd8&&from&&j.cd8<from)return false;
+    if(j.cd8&&to&&j.cd8>to)return false;
+    return matchCommon(j);
+  });
+  jobProgress.sort((a,b)=>{const va=a[jobProgSortKey]!=null?a[jobProgSortKey]:'',vb=b[jobProgSortKey]!=null?b[jobProgSortKey]:'';if(typeof va==='number')return(va-vb)*jobProgSortDir;return String(va).localeCompare(String(vb))*jobProgSortDir;});
+  jobProgressPage=1;
+
+  jobCanceled=ALL_JOBS.filter(j=>{
+    if(!isCanceledJob(j.status))return false;
+    const cd8=j.cd8||j.d8||'';
+    if((from||to)&&!cd8)return false;
+    if(cd8&&from&&cd8<from)return false;
+    if(cd8&&to&&cd8>to)return false;
+    return matchCommon(j);
+  });
+  jobCanceled.sort((a,b)=>{const va=a[jobCancelSortKey]!=null?a[jobCancelSortKey]:'',vb=b[jobCancelSortKey]!=null?b[jobCancelSortKey]:'';if(typeof va==='number')return(va-vb)*jobCancelSortDir;return String(va).localeCompare(String(vb))*jobCancelSortDir;});
+  jobCanceledPage=1;
+
+  const cmpRng=jobCmpRangeLabel(from,to);
+  document.getElementById('job-finfo').textContent=jobFiltered.length.toLocaleString()+' completed · '+(from||'All')+' → '+(to||'All')+cmpRng;
+  renderJobKPIs();renderJobCharts();renderJobTable();renderJobProgressTable();renderJobCanceledTable();
+}
+
+function renderJobKPIs(){
+  const from=document.getElementById('jobDateFrom').value,to=document.getElementById('jobDateTo').value;
+  const n=jobFiltered.length;
+  const rev=jobFiltered.reduce((s,j)=>s+j.rev,0);
+  const labor=jobFiltered.reduce((s,j)=>s+j.labor,0);
+  const matl=jobFiltered.reduce((s,j)=>s+j.matl,0);
+  const gm=jobFiltered.reduce((s,j)=>s+j.gm,0);
+  const gmPct=rev>0?gm/rev*100:0;
+  const avg=n>0?rev/n:0;
+  document.getElementById('jk-total').textContent=n.toLocaleString();
+  document.getElementById('jk-rev').textContent=fmtM(rev);
+  const laborPct=rev>0?labor/rev*100:0,matlPct=rev>0?matl/rev*100:0;
+  document.getElementById('jk-labor').textContent=rev>0?laborPct.toFixed(1)+'%':'—';
+  document.getElementById('jk-labor-sub').textContent=fmtM(labor);
+  document.getElementById('jk-matl').textContent=rev>0?matlPct.toFixed(1)+'%':'—';
+  document.getElementById('jk-matl-sub').textContent=fmtM(matl);
+  document.getElementById('jk-gm').textContent=fmtM(gm);
+  document.getElementById('jk-gmpct').textContent=rev>0?gmPct.toFixed(1)+'%':'—';
+  document.getElementById('jk-avg').textContent=fmtM(avg);
+
+  const np=jobProgress.length;
+  const revp=jobProgress.reduce((s,j)=>s+j.rev,0);
+  document.getElementById('jk-prog').textContent=np.toLocaleString();
+  document.getElementById('jk-progrev').textContent=fmtM(revp);
+  document.getElementById('jk-progavg').textContent=np>0?fmtM(revp/np):'—';
+
+  const nc=jobCanceled.length;
+  const estLost=jobCanceled.reduce((s,j)=>s+j.estSales,0);
+  document.getElementById('jk-cancel').textContent=nc.toLocaleString();
+  document.getElementById('jk-cancelest').textContent=fmtM(estLost);
+
+  const cmp=getJobCompareDates(from,to);
+  ['jkd-total','jkd-rev','jkd-labor','jkd-matl','jkd-gm','jkd-gmpct','jkd-avg','jkd-prog','jkd-progrev','jkd-cancel'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='';});
+  if(cmp){
+    const matchCommon=j=>{
+      if(MS_SEL.bu.size>0&&!MS_SEL.bu.has(j.b))return false;
+      if(MS_SEL.tech.size>0&&!MS_SEL.tech.has(j.t))return false;
+      if(MS_SEL.jt.size>0&&!MS_SEL.jt.has(j.jt))return false;
+      if(MS_SEL.cat.size>0&&!MS_SEL.cat.has(j.cat))return false;
+      return true;
+    };
+    const prevCompleted=ALL_JOBS.filter(j=>isCompletedJob(j.status)&&j.d8&&j.d8>=cmp.from&&j.d8<=cmp.to&&matchCommon(j));
+    const pn=prevCompleted.length,prevRev=prevCompleted.reduce((s,j)=>s+j.rev,0),prevGm=prevCompleted.reduce((s,j)=>s+j.gm,0);
+    const prevLabor=prevCompleted.reduce((s,j)=>s+j.labor,0),prevMatl=prevCompleted.reduce((s,j)=>s+j.matl,0);
+    const prevGmPct=prevRev>0?prevGm/prevRev*100:0,prevAvg=pn>0?prevRev/pn:0;
+    document.getElementById('jkd-total').innerHTML=jobFmtDelta(n,pn,pn.toString());
+    document.getElementById('jkd-rev').innerHTML=jobFmtDelta(rev,prevRev,fmtM(prevRev));
+    const prevLaborPct=prevRev>0?prevLabor/prevRev*100:0,prevMatlPct=prevRev>0?prevMatl/prevRev*100:0;
+    document.getElementById('jkd-labor').innerHTML=jobFmtDeltaPts(laborPct,prevLaborPct,prevLaborPct.toFixed(1)+'%');
+    document.getElementById('jkd-matl').innerHTML=jobFmtDeltaPts(matlPct,prevMatlPct,prevMatlPct.toFixed(1)+'%');
+    document.getElementById('jkd-gm').innerHTML=jobFmtDelta(gm,prevGm,fmtM(prevGm));
+    document.getElementById('jkd-gmpct').innerHTML=jobFmtDeltaPts(gmPct,prevGmPct,prevGmPct.toFixed(1)+'%');
+    document.getElementById('jkd-avg').innerHTML=jobFmtDelta(avg,prevAvg,fmtM(prevAvg));
+
+    const prevProg=ALL_JOBS.filter(j=>isInProgressJob(j.status)&&j.cd8&&j.cd8>=cmp.from&&j.cd8<=cmp.to&&matchCommon(j));
+    const ppn=prevProg.length,ppRev=prevProg.reduce((s,j)=>s+j.rev,0);
+    document.getElementById('jkd-prog').innerHTML=jobFmtDelta(np,ppn,ppn.toString());
+    document.getElementById('jkd-progrev').innerHTML=jobFmtDelta(revp,ppRev,fmtM(ppRev));
+
+    const prevCanceled=ALL_JOBS.filter(j=>isCanceledJob(j.status)&&(j.cd8||j.d8)>=cmp.from&&(j.cd8||j.d8)<=cmp.to&&matchCommon(j));
+    document.getElementById('jkd-cancel').innerHTML=jobFmtDelta(nc,prevCanceled.length,prevCanceled.length.toString());
+  }
+}
+
+// ── CHARTS ──
+const JOB_CHARTS={};
+function destroyJobChart(id){if(JOB_CHARTS[id]){JOB_CHARTS[id].destroy();delete JOB_CHARTS[id];}}
+const JOB_PALETTE=['#2563eb','#0e93a8','#0fa572','#e08a1e','#c4551d','#7c3aed','#d9a441','#6b7680'];
+function renderJobCharts(){
+  const MONTH_ABBR=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function monthlyRevForYear(y){
+    const sums=Array(12).fill(0);
+    ALL_JOBS.forEach(j=>{
+      if(!isCompletedJob(j.status)||!j.d8)return;
+      const yy=parseInt(j.d8.slice(0,4),10),mm=parseInt(j.d8.slice(5,7),10);
+      if(yy===y)sums[mm-1]+=j.rev;
+    });
+    return sums;
+  }
+  const revYearSel=document.getElementById('jobRevYearSel');
+  const selYear=parseInt((revYearSel&&revYearSel.value)||'',10)||new Date().getFullYear();
+  const nowD=new Date(),nowYear=nowD.getFullYear(),nowMonth=nowD.getMonth()+1;
+  const lastMonth=(selYear===nowYear)?nowMonth:12;
+  const curYearSums=monthlyRevForYear(selYear);
+  const prevYearSums=monthlyRevForYear(selYear-1);
+  const revLabels=MONTH_ABBR.slice(0,lastMonth);
+  const revData=curYearSums.slice(0,lastMonth).map(v=>v/1000);
+  destroyJobChart('rev');
+  JOB_CHARTS.rev=new Chart(document.getElementById('jobRevChart'),{type:'bar',data:{labels:revLabels,datasets:[{label:'Revenue ($K)',data:revData,backgroundColor:'#2563eb',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{
+    label:(ctx)=>'Revenue: '+fmtM(ctx.parsed.y*1000),
+    afterLabel:(ctx)=>{
+      const i=ctx.dataIndex;
+      const curVal=curYearSums[i]||0,prevVal=prevYearSums[i]||0;
+      const lines=['Same month '+(selYear-1)+': '+fmtM(prevVal)];
+      if(prevVal>0){const yoy=(curVal-prevVal)/prevVal*100;lines.push('YoY: '+(yoy>=0?'+':'')+yoy.toFixed(1)+'%');}
+      else{lines.push('YoY: — (no '+(selYear-1)+' data)');}
+      return lines;
+    }
+  }}},scales:{y:{beginAtZero:true,ticks:{callback:v=>'$'+v+'K'}}}}});
+
+  const byBu={};
+  jobFiltered.forEach(j=>{byBu[j.b]=(byBu[j.b]||0)+1;});
+  const bus=Object.keys(byBu).sort((a,b)=>byBu[b]-byBu[a]);
+  destroyJobChart('bu');
+  JOB_CHARTS.bu=new Chart(document.getElementById('jobBuChart'),{type:'bar',data:{labels:bus,datasets:[{label:'Jobs',data:bus.map(b=>byBu[b]),backgroundColor:JOB_PALETTE,borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}});
+
+  const byInstaller={};
+  jobFiltered.forEach(j=>{byInstaller[j.t]=(byInstaller[j.t]||0)+j.rev;});
+  const installersByRev=Object.keys(byInstaller).sort((a,b)=>byInstaller[b]-byInstaller[a]).slice(0,10);
+  destroyJobChart('installerRev');
+  JOB_CHARTS.installerRev=new Chart(document.getElementById('jobTechRevChart'),{type:'bar',data:{labels:installersByRev,datasets:[{label:'Revenue ($K)',data:installersByRev.map(t=>byInstaller[t]/1000),backgroundColor:'#0e93a8',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{callback:v=>'$'+v+'K'}}}}});
+
+  const bySoldBy={};
+  jobFiltered.forEach(j=>{
+    const sb=j.soldBy&&j.soldBy.trim()?j.soldBy.trim():'Unassigned';
+    if(!bySoldBy[sb])bySoldBy[sb]={rev:0,gm:0};
+    bySoldBy[sb].rev+=j.rev;
+    bySoldBy[sb].gm+=j.gm;
+  });
+  const soldByTop10=Object.keys(bySoldBy).sort((a,b)=>bySoldBy[b].gm-bySoldBy[a].gm).slice(0,10);
+  const soldByRanked=soldByTop10
+    .map(n=>({name:n,pct:bySoldBy[n].rev>0?(bySoldBy[n].gm/bySoldBy[n].rev*100):0}))
+    .sort((a,b)=>b.pct-a.pct);
+  const soldByByGm=soldByRanked.map(r=>r.name);
+  const soldByGmPct=soldByRanked.map(r=>r.pct);
+  destroyJobChart('soldByGm');
+  JOB_CHARTS.soldByGm=new Chart(document.getElementById('jobTechGmChart'),{
+    type:'bar',
+    data:{labels:soldByByGm,datasets:[{label:'Gross Margin %',data:soldByGmPct,backgroundColor:'#0fa572',borderRadius:4}]},
+    options:{
+      responsive:true,maintainAspectRatio:false,indexAxis:'y',
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{
+          label:(ctx)=>'Gross Margin: '+ctx.parsed.x.toFixed(1)+'%',
+          afterLabel:(ctx)=>{
+            const nm=soldByByGm[ctx.dataIndex];
+            const s=bySoldBy[nm]||{rev:0,gm:0};
+            return ['Revenue: '+fmtM(s.rev),'Gross Margin: '+fmtM(s.gm)];
+          }
+        }}
+      },
+      scales:{x:{beginAtZero:true,ticks:{callback:v=>v+'%'}}}
+    }
+  });
+
+  const byCat={};
+  jobFiltered.forEach(j=>{byCat[j.cat]=(byCat[j.cat]||0)+1;});
+  const cats=Object.keys(byCat).sort((a,b)=>byCat[b]-byCat[a]);
+  destroyJobChart('cat');
+  JOB_CHARTS.cat=new Chart(document.getElementById('jobCatChart'),{type:'bar',data:{labels:cats,datasets:[{label:'Jobs',data:cats.map(c=>byCat[c]),backgroundColor:'#d9a441',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+}
+
+// ── TABLES ──
+function stJobLink(o){return o?`<a class="st-link" href="https://go.servicetitan.com/#/Job/Index/${encodeURIComponent(o)}" target="_blank" rel="noopener">↗ Open</a>`:'—';}
+function renderJobPagination(elId,total,page,onPage){
+  const el=document.getElementById(elId);
+  const pages=Math.max(1,Math.ceil(total/JOB_PAGE_SIZE));
+  if(pages<=1){el.innerHTML='';return;}
+  let html=`<button class="pg-btn" onclick="${onPage}(${Math.max(1,page-1)})" ${page===1?'disabled':''}>‹ Prev</button>`;
+  html+=`<span class="pg-info">Page ${page} of ${pages}</span>`;
+  html+=`<button class="pg-btn" onclick="${onPage}(${Math.min(pages,page+1)})" ${page===pages?'disabled':''}>Next ›</button>`;
+  el.innerHTML=html;
+}
+function sortJob(key){if(jobSortKey===key)jobSortDir*=-1;else{jobSortKey=key;jobSortDir=key==='d8'?-1:1;}applyJobFilters();}
+function sortJobProg(key){if(jobProgSortKey===key)jobProgSortDir*=-1;else{jobProgSortKey=key;jobProgSortDir=key==='cd8'?-1:1;}applyJobFilters();}
+function sortJobCanceled(key){if(jobCancelSortKey===key)jobCancelSortDir*=-1;else{jobCancelSortKey=key;jobCancelSortDir=key==='cd8'?-1:1;}applyJobFilters();}
+function goJobPage(p){jobPage=p;renderJobTable();}
+function goJobProgPage(p){jobProgressPage=p;renderJobProgressTable();}
+function goJobCancelPage(p){jobCanceledPage=p;renderJobCanceledTable();}
+
+function renderJobTable(){
+  document.getElementById('job-count').textContent=jobFiltered.length.toLocaleString()+' jobs';
+  const start=(jobPage-1)*JOB_PAGE_SIZE;
+  const page=jobFiltered.slice(start,start+JOB_PAGE_SIZE);
+  document.getElementById('jobBody').innerHTML=page.map((j,i)=>`<tr><td>${start+i+1}</td><td style="white-space:nowrap">${j.d8?fmtDate(new Date(j.d8+'T00:00:00')):'—'}</td><td class="mono">${esc(j.o)}</td><td class="td-cust">${esc(j.c)}</td><td>${esc(j.b)}</td><td>${esc(j.t)}</td><td>${esc(j.jt)}</td><td>${esc(j.cat)}</td><td class="td-val">${fmtM(j.rev)}</td><td class="td-val">${fmtM(j.gm)}</td><td>${stJobLink(j.o)}</td></tr>`).join('')||'<tr><td colspan="11" style="text-align:center;color:var(--gray-500);padding:20px">No jobs match the current filters</td></tr>';
+  renderJobPagination('jobPagination',jobFiltered.length,jobPage,'goJobPage');
+}
+function renderJobProgressTable(){
+  document.getElementById('job-prog-count').textContent=jobProgress.length.toLocaleString()+' jobs';
+  const start=(jobProgressPage-1)*JOB_PAGE_SIZE;
+  const page=jobProgress.slice(start,start+JOB_PAGE_SIZE);
+  document.getElementById('jobProgressBody').innerHTML=page.map((j,i)=>`<tr><td>${start+i+1}</td><td style="white-space:nowrap">${j.cd8?fmtDate(new Date(j.cd8+'T00:00:00')):'—'}</td><td class="mono">${esc(j.o)}</td><td class="td-cust">${esc(j.c)}</td><td>${esc(j.b)}</td><td>${esc(j.t)}</td><td>${esc(j.jt)}</td><td><span class="status-pill ${j.status.toLowerCase().replace(/\s+/g,'')}">${esc(j.status)}</span></td><td class="td-val">${fmtM(j.rev)}</td><td>${j.laDate?fmtDate(j.laDate):'—'}</td><td>${stJobLink(j.o)}</td></tr>`).join('')||'<tr><td colspan="11" style="text-align:center;color:var(--gray-500);padding:20px">No jobs match the current filters</td></tr>';
+  renderJobPagination('jobProgressPagination',jobProgress.length,jobProgressPage,'goJobProgPage');
+}
+function renderJobCanceledTable(){
+  document.getElementById('job-cancel-count').textContent=jobCanceled.length.toLocaleString()+' jobs';
+  const start=(jobCanceledPage-1)*JOB_PAGE_SIZE;
+  const page=jobCanceled.slice(start,start+JOB_PAGE_SIZE);
+  document.getElementById('jobCanceledBody').innerHTML=page.map((j,i)=>{const dISO=j.cd8||j.d8;return `<tr><td>${start+i+1}</td><td style="white-space:nowrap">${dISO?fmtDate(new Date(dISO+'T00:00:00')):'—'}</td><td class="mono">${esc(j.o)}</td><td class="td-cust">${esc(j.c)}</td><td>${esc(j.b)}</td><td>${esc(j.t)}</td><td>${esc(j.jt)}</td><td>${esc(j.cancelReason)||'—'}</td><td class="td-val">${fmtM(j.estSales)}</td><td>${stJobLink(j.o)}</td></tr>`;}).join('')||'<tr><td colspan="10" style="text-align:center;color:var(--gray-500);padding:20px">No jobs match the current filters</td></tr>';
+  renderJobPagination('jobCanceledPagination',jobCanceled.length,jobCanceledPage,'goJobCancelPage');
+}
+
+// ── EXPORT ──
+function exportJobsXLSX(filename,header,rows){
+  const ws=XLSX.utils.aoa_to_sheet([header,...rows]);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Export');
+  XLSX.writeFile(wb,filename);
+}
+function exportJobXLSX(){exportJobsXLSX('Coolbreeze_Jobs_Completed_'+todayISO()+'.xlsx',['#','Completion Date','Job #','Customer','Business Unit','Technician','Job Type','Campaign Category','Revenue','Gross Margin'],jobFiltered.map((j,i)=>[i+1,j.d8||'',j.o,j.c,j.b,j.t,j.jt,j.cat,j.rev,j.gm]));}
+function exportJobProgressXLSX(){exportJobsXLSX('Coolbreeze_Jobs_InProgress_'+todayISO()+'.xlsx',['#','Created Date','Job #','Customer','Business Unit','Technician','Job Type','Status','Revenue','Last Appt Date'],jobProgress.map((j,i)=>[i+1,j.cd8||'',j.o,j.c,j.b,j.t,j.jt,j.status,j.rev,j.laDate?isoDay(j.laDate):'']));}
+function exportJobCanceledXLSX(){exportJobsXLSX('Coolbreeze_Jobs_Canceled_'+todayISO()+'.xlsx',['#','Created Date','Job #','Customer','Business Unit','Technician','Job Type','Cancel Reason','Est. Value Lost'],jobCanceled.map((j,i)=>[i+1,(j.cd8||j.d8)||'',j.o,j.c,j.b,j.t,j.jt,j.cancelReason,j.estSales]));}
+
+function resetJobFilters(){
+  document.getElementById('jobDateFrom').value=monthStartISO();
+  document.getElementById('jobDateTo').value=todayISO();
+  document.getElementById('jobSearch').value='';
+  document.getElementById('jobCompareSel').value='none';
+  jobCompareMode='none';
+  ['bu','tech','jt','cat'].forEach(k=>{MS_SEL[k].clear();renderMSItems(k);updateMSBtn(k);});
+  applyJobFilters();
+}
+
+// ── FETCH — direct Azure Blob fetch (Coolbreeze's Bills tab instead goes
+// through the Google Apps Script Web App, so this file has no existing
+// Azure fetcher to reuse). Reuses the existing getCached/setCache/CACHE_TTL
+// (keyed 'cb_jobsServiceTitan', same convention as 'cb_quickbooksBills'
+// etc.) rather than a separate cache implementation. ──
+async function fetchBlobXLSX(url){
+  let resp;
+  try{
+    resp=await fetch(url,{cache:'no-store'});
+  }catch(netErr){
+    throw new Error(`Network error fetching Azure Blob: ${netErr.message}. This is almost always a CORS setting on the Azure Storage account, or an expired/invalid SAS token.`);
+  }
+  if(!resp.ok)throw new Error(`HTTP ${resp.status} fetching blob`);
+  const buf=await resp.arrayBuffer();
+  const wb=XLSX.read(buf,{type:'array',cellDates:true});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
+}
+async function fetchJobsBlob(){return fetchBlobXLSX(JOBS_CONFIG.sasUrl);}
+async function fetchJobsPrevYearBlob(){
+  if(!JOBS_CONFIG.sasUrlPrevYear)return null;
+  try{
+    return await fetchBlobXLSX(JOBS_CONFIG.sasUrlPrevYear);
+  }catch(e){
+    console.warn('[Jobs] Previous-year blob fetch failed (non-fatal — current-year data still loads):',e.message);
+    return null;
+  }
+}
+
+async function loadAndInitJobs(){
+  document.getElementById('jobDateFrom').value=monthStartISO();
+  document.getElementById('jobDateTo').value=todayISO();
+
+  const cached=getCached(REPORT_KEY_JOBS);
+  const cachedPrev=getCached(REPORT_KEY_JOBS_PREV);
+  if(cached){
+    processJobs(cached,cachedPrev);buildJobMSOptions();applyJobFilters();
+    document.getElementById('job-finfo').textContent=jobFiltered.length.toLocaleString()+' completed · cached, refreshing…';
+    try{
+      const [rows,prevRows]=await Promise.all([fetchJobsBlob(),fetchJobsPrevYearBlob()]);
+      setCache(REPORT_KEY_JOBS,rows);
+      if(prevRows)setCache(REPORT_KEY_JOBS_PREV,prevRows);
+      processJobs(rows,prevRows||cachedPrev);buildJobMSOptions();applyJobFilters();
+    }catch(e){
+      console.warn('[Jobs BG refresh failed]',e);
+      document.getElementById('job-finfo').textContent+=' · ⚠ refresh failed: '+e.message.slice(0,80);
+    }
+    return;
+  }
+
+  try{
+    document.getElementById('job-finfo').textContent='Connecting to Azure…';
+    const [rows,prevRows]=await Promise.all([fetchJobsBlob(),fetchJobsPrevYearBlob()]);
+    setCache(REPORT_KEY_JOBS,rows);
+    if(prevRows)setCache(REPORT_KEY_JOBS_PREV,prevRows);
+    processJobs(rows,prevRows);buildJobMSOptions();applyJobFilters();
+  }catch(e){
+    console.error('[Jobs] Load error:',e);
+    document.getElementById('job-finfo').textContent='⚠ Failed to load: '+e.message;
+  }
+}
+
+// Add the Jobs cache keys to "Hard Refresh" (clearAllCache), so that button
+// also clears cached Jobs data (both years), not just the Bills-tab reports.
+const _origClearAllCache=clearAllCache;
+clearAllCache=function(){
+  _origClearAllCache();
+  try{localStorage.removeItem('cb_'+REPORT_KEY_JOBS);}catch(e){}
+  try{localStorage.removeItem('cb_'+REPORT_KEY_JOBS_PREV);}catch(e){}
+};
+
+document.addEventListener('DOMContentLoaded',loadAndInitJobs);
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════════
+// ESTIMATES TAB (added 2026-09-12, mirrors Best Plumber's "Estimates Pipeline"
+// tab). Own flat top-level <script> block, own cache key, own DOMContentLoaded
+// hook — same isolation pattern as the Jobs tab above, so a problem here can't
+// take down Bills/Membership or Jobs. Fetches directly from Azure Blob Storage
+// via the already-defined fetchBlobXLSX() helper (added for the Jobs tab).
+//
+// Date basis: Creation Date, EXCEPT once an estimate is Sold, in which case
+// Sold On becomes the date that counts instead (see estEffDate) — an estimate
+// created in July but sold in August moves into August as soon as it sells.
+//
+// Potential Revenue = the highest (or, via the toggle, median) Estimates
+// Subtotal per Opportunity Number, summed across every distinct Opportunity
+// in range — matches ServiceTitan's own "Quoted Value" definition, so
+// Good/Better/Best alternative estimates on the same Opportunity are never
+// double-counted. Falls back to Parent Job Number, then the estimate's own
+// Id, when an Opportunity Number is missing (common in this export — many
+// rows have no Opportunity Number or Parent Job Number at all).
+//
+// "Sold Then Canceled" cross-references the Jobs tab's own ALL_JOBS (already
+// loaded above) by Parent Job Number — this only catches cancellations for
+// estimates that have a Parent Job Number AND whose job appears in the Jobs
+// workbook.
+// ══════════════════════════════════════════════════════════════════════════
+
+const ESTIMATES_CONFIG = {
+  sasUrl: "https://coolbreeze.blob.core.windows.net/coolbreeze/Estimates%20Service%20Titan.xlsx?sp=r&st=2026-09-12T01:22:42Z&se=2030-09-12T09:37:42Z&spr=https&sv=2026-02-06&sr=b&sig=ZOkUzCAHYzezBXsqsgH9kRygRnpaKCaLiZtUkcZADk4%3D",
+};
+const REPORT_KEY_ESTIMATES = 'estimatesServiceTitan';
+
+let estimatesDataReady = false;
+let estPotentialBasis = 'highest';
+let ALL_ESTIMATES = [];
+
+function parseEstimatesRows(rows){
+  if(!rows || rows.length<2) return [];
+  const headers = rows[0].map(h=>String(h||'').trim());
+  const C = {}; headers.forEach((h,i)=>{ if(h) C[h]=i; });
+  function col(...names){ for(const n of names){ if(C[n]!=null) return C[n]; } return -1; }
+  const COL = {
+    id: col('Estimate Id'),
+    jobNumber: col('Parent Job Number'),
+    status: col('Estimate Status'),
+    subtotal: col('Estimates Subtotal'),
+    soldOn: col('Sold On'),
+    bizUnit: col('Business Unit'),
+    campaign: col('Parent Job Campaign', 'Job Campaign', 'Campaign'),
+    customer: col('Customer Name'),
+    soldBy: col('Sold By'),
+    createdBy: col('Created By', 'Estimate Created By'),
+    createdOn: col('Creation Date'),
+    jobType: col('Parent Job Type'),
+    oppNumber: col('Opportunity Number'),
+    oppStatus: col('Opportunity Status'),
+    ageDays: col('Estimate Age (Days)'),
+    tags: col('Parent Job Tags'),
+    phone: col('Customer Phone'),
+  };
+  const missing = Object.entries(COL).filter(([k,v])=>v===-1).map(([k])=>k);
+  if(missing.length) console.warn('[Estimates] Unmapped fields (filter/column will be blank):', missing);
+  const out = [];
+  for(const r of rows.slice(1)){
+    const id = COL.id>=0 ? r[COL.id] : null;
+    if(id==null || id==='') continue;
+    const status = COL.status>=0 ? String(r[COL.status]||'').trim() : '';
+    const bizUnit = COL.bizUnit>=0 ? String(r[COL.bizUnit]||'').trim() : '';
+    const customer = COL.customer>=0 ? String(r[COL.customer]||'').trim() : '';
+    // Data-quality fix: this ServiceTitan/Power BI export ends with a spurious
+    // "Grand Total" row (Estimate Id present, but Estimate Status/Business
+    // Unit/Customer Name all blank, and Estimates Subtotal = the SUM of every
+    // real row above it -- e.g. one row with Subtotal $6.5M when every real
+    // estimate is a few hundred to tens of thousands of dollars). It has no
+    // Creation Date either, so date-scoped views already exclude it, but it
+    // was still counted in "estimate rows loaded" and any unfiltered total --
+    // skip it outright rather than let a phantom row masquerade as data.
+    if(!status && !bizUnit && !customer) continue;
+    out.push({
+      id: String(id),
+      jobNumber: COL.jobNumber>=0 ? String(r[COL.jobNumber]||'').trim() : '',
+      status,
+      subtotal: sf(COL.subtotal>=0 ? r[COL.subtotal] : null),
+      soldOn: isoDay(sd(COL.soldOn>=0 ? r[COL.soldOn] : null)),
+      bizUnit,
+      campaign: COL.campaign>=0 ? String(r[COL.campaign]||'') : '',
+      customer,
+      soldBy: COL.soldBy>=0 ? String(r[COL.soldBy]||'').trim() : '',
+      createdBy: COL.createdBy>=0 ? String(r[COL.createdBy]||'').trim() : '',
+      createdOn: isoDay(sd(COL.createdOn>=0 ? r[COL.createdOn] : null)),
+      jobType: COL.jobType>=0 ? String(r[COL.jobType]||'').trim() : '',
+      oppNumber: COL.oppNumber>=0 ? String(r[COL.oppNumber]||'').trim() : '',
+      oppStatus: COL.oppStatus>=0 ? String(r[COL.oppStatus]||'').trim() : '',
+      ageDays: sf(COL.ageDays>=0 ? r[COL.ageDays] : null),
+      tags: COL.tags>=0 ? String(r[COL.tags]||'') : '',
+      phone: COL.phone>=0 ? String(r[COL.phone]||'').trim() : '',
+    });
+  }
+  return out;
+}
+
+function processEstimates(rows){
+  ALL_ESTIMATES = parseEstimatesRows(rows);
+  console.log('[Estimates] Parsed', ALL_ESTIMATES.length, 'estimates');
+}
+
+function estJobStatusMap(){
+  const m = new Map();
+  ALL_JOBS.forEach(j=>{ if(j.o) m.set(j.o, j.status); });
+  return m;
+}
+// Add estBiz/estTech/estCampaign to the generic multiselect system already
+// built for the Jobs tab (MS_OPTS/MS_SEL/renderMSItems/toggleMS/etc.) instead
+// of porting Best Plumber's bespoke per-field functions.
+MS_OPTS.estBiz=[]; MS_OPTS.estTech=[]; MS_OPTS.estCampaign=[];
+MS_SEL.estBiz=new Set(); MS_SEL.estTech=new Set(); MS_SEL.estCampaign=new Set();
+MS_LABEL.estBiz='All Units'; MS_LABEL.estTech='All Techs'; MS_LABEL.estCampaign='All Campaigns';
+// The generic toggleMSItem/selectAllMS/clearMS always called applyJobFilters()
+// directly (there was only one consumer before now) — MS_APPLY lets each key
+// route to its own tab's apply function instead.
+const MS_APPLY={bu:()=>applyJobFilters(),tech:()=>applyJobFilters(),jt:()=>applyJobFilters(),cat:()=>applyJobFilters(),
+  estBiz:()=>applyEstFilters(),estTech:()=>applyEstFilters(),estCampaign:()=>applyEstFilters()};
+toggleMSItem=function(key,val,checked){checked?MS_SEL[key].add(val):MS_SEL[key].delete(val);updateMSBtn(key);(MS_APPLY[key]||applyJobFilters)();};
+selectAllMS=function(key){MS_OPTS[key].forEach(o=>MS_SEL[key].add(o));renderMSItems(key);updateMSBtn(key);(MS_APPLY[key]||applyJobFilters)();};
+clearMS=function(key){MS_SEL[key].clear();renderMSItems(key);updateMSBtn(key);(MS_APPLY[key]||applyJobFilters)();};
+
+function estBizMatch(bizUnit){ return MS_SEL.estBiz.size===0 || MS_SEL.estBiz.has(bizUnit); }
+// A Sold estimate is credited to Sold By; a not-yet-sold estimate falls back
+// to Created By, then Unassigned — same rule the Technician chart uses.
+function estTechOf(e){ return (e.status==='Sold' && e.soldBy) ? e.soldBy : (e.createdBy || 'Unassigned'); }
+function estTechMatch(tech){ return MS_SEL.estTech.size===0 || MS_SEL.estTech.has(tech); }
+function estCampaignMatch(campaign){ return MS_SEL.estCampaign.size===0 || MS_SEL.estCampaign.has(campaign); }
+function estCanceledFilter(){ const sel=document.getElementById('estCanceledSel'); return sel?sel.value:''; }
+
+function estDateRange(){
+  const fromEl=document.getElementById('estDateFrom'), toEl=document.getElementById('estDateTo');
+  if(fromEl && !fromEl.value) fromEl.value=monthStartISO();
+  if(toEl && !toEl.value) toEl.value=todayISO();
+  return {
+    from: fromEl && fromEl.value ? fromEl.value : monthStartISO(),
+    to: toEl && toEl.value ? toEl.value : todayISO(),
+  };
+}
+function estEffDate(e){ return (e.status==='Sold' && e.soldOn) ? e.soldOn : e.createdOn; }
+
+function buildEstMSOptions(){
+  const r=estDateRange();
+  const bizSet=new Set(), techSet=new Set(), campSet=new Set();
+  ALL_ESTIMATES.forEach(e=>{
+    const d8=estEffDate(e);
+    if(!d8 || d8<r.from || d8>r.to) return;
+    if(e.bizUnit) bizSet.add(e.bizUnit);
+    techSet.add(estTechOf(e));
+    if(e.campaign) campSet.add(e.campaign);
+  });
+  MS_OPTS.estBiz=[...bizSet].sort();
+  MS_OPTS.estTech=[...techSet].sort();
+  MS_OPTS.estCampaign=[...campSet].sort();
+  renderMSItems('estBiz'); renderMSItems('estTech'); renderMSItems('estCampaign');
+  updateMSBtn('estBiz'); updateMSBtn('estTech'); updateMSBtn('estCampaign');
+}
+
+function estRangeRows(from,to){
+  const jobStatusMap=estJobStatusMap();
+  const cf=estCanceledFilter();
+  const seen=new Set();
+  const out=[];
+  ALL_ESTIMATES.forEach(e=>{
+    const d8=estEffDate(e);
+    if(!d8 || d8<from || d8>to) return;
+    if(!estBizMatch(e.bizUnit)) return;
+    if(!estTechMatch(estTechOf(e))) return;
+    if(!estCampaignMatch(e.campaign)) return;
+    if(seen.has(e.id)) return;
+    seen.add(e.id);
+    if(cf){
+      const stc=e.status==='Sold' && isCanceledJob(jobStatusMap.get(e.jobNumber)||'');
+      if(cf==='yes' && !stc) return;
+      if(cf==='no' && stc) return;
+    }
+    out.push(e);
+  });
+  return out;
+}
+
+function median(nums){
+  if(!nums.length) return 0;
+  const s=nums.slice().sort((a,b)=>a-b);
+  const mid=Math.floor(s.length/2);
+  return s.length%2 ? s[mid] : (s[mid-1]+s[mid])/2;
+}
+// Highest (default) or median Estimates Subtotal per Opportunity, summed
+// across every distinct Opportunity — see file header comment for why.
+function estPotentialRevenue(rows){
+  if(!rows.length) return 0;
+  const byOpp=new Map();
+  rows.forEach(e=>{
+    const key=e.oppNumber || (e.jobNumber ? 'job:'+e.jobNumber : 'est:'+e.id);
+    if(!byOpp.has(key)) byOpp.set(key, []);
+    byOpp.get(key).push(e.subtotal||0);
+  });
+  let total=0;
+  byOpp.forEach(vals=>{ total += estPotentialBasis==='median' ? median(vals) : Math.max(...vals); });
+  return total;
+}
+function setEstPotentialBasis(basis){
+  estPotentialBasis=basis;
+  document.querySelectorAll('#estPotentialBasisSeg .seg-btn').forEach(b=>b.classList.toggle('active', b.dataset.basis===basis));
+  renderEstimatesTab();
+}
+
+function fmtLongDate(iso){
+  if(!iso) return '';
+  const d=new Date(iso+'T00:00:00Z');
+  const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[d.getUTCMonth()]+' '+String(d.getUTCDate()).padStart(2,'0')+', '+d.getUTCFullYear();
+}
+
+function renderEstimatesTab(){
+  const finfo=document.getElementById('est-finfo');
+  if(finfo) finfo.textContent=estimatesDataReady ? ALL_ESTIMATES.length.toLocaleString()+' estimate rows loaded' : 'Loading estimates data…';
+  const r=estDateRange();
+  buildEstMSOptions();
+  const jobStatusMap=estJobStatusMap();
+  const rows=estRangeRows(r.from, r.to);
+  const basisHint=document.getElementById('basisHintEst');
+  if(basisHint) basisHint.setAttribute('data-tip','Creation Date (Sold On once an estimate sells), '+fmtLongDate(r.from)+' → '+fmtLongDate(r.to)+' · Potential Revenue basis: '+(estPotentialBasis==='median'?'Median quote per Opportunity':'Highest quote per Opportunity'));
+  if(basisHint) basisHint.textContent='ⓘ';
+
+  renderEstKPIs(rows, jobStatusMap);
+  renderEstTopSalesDay(rows);
+  renderEstWeeklyChart(r.from, r.to);
+  renderEstDailyPctChart(r.from, r.to);
+  renderEstTechChart(rows);
+  renderEstTechAvgTicketChart(rows);
+  buildEstCustomerRows(rows);
+  estCustPage=1;
+  renderEstCustomerTable();
+}
+
+function renderEstKPIs(rows, jobStatusMap){
+  const grid=document.getElementById('kpiGridEst');
+  if(!grid) return;
+  const potentialRevenue=estPotentialRevenue(rows);
+  const soldRows=rows.filter(e=>e.status==='Sold');
+  const totalConverted=soldRows.reduce((a,e)=>a+(e.subtotal||0),0);
+  const avgTicket=soldRows.length>0 ? totalConverted/soldRows.length : 0;
+  const opps=new Set(rows.filter(e=>e.oppNumber).map(e=>e.oppNumber)).size;
+  const pctConverted=potentialRevenue>0 ? totalConverted/potentialRevenue*100 : 0;
+  const stcRows=rows.filter(e=>e.status==='Sold' && isCanceledJob(jobStatusMap.get(e.jobNumber)||''));
+  const stcAmount=stcRows.reduce((a,e)=>a+(e.subtotal||0),0);
+  const cards=[
+    {ico:'💰',lbl:'Potential Revenue',tip:(estPotentialBasis==='median'?'The median-priced':'The highest')+' Estimates Subtotal per Opportunity, summed across every distinct Opportunity in range.',val:fmtM(potentialRevenue),sub:rows.length.toLocaleString()+' estimate(s)'},
+    {ico:'✅',lbl:'Total Converted',tip:'Sum of Estimates Subtotal where Estimate Status = Sold, in range.',val:fmtM(totalConverted),sub:soldRows.length.toLocaleString()+' sold estimate(s)',cls:'gold'},
+    {ico:'🎫',lbl:'Avg Ticket',tip:'Total Converted ÷ count of Sold estimates in range.',val:fmtM(avgTicket),sub:'Per sold estimate'},
+    {ico:'📋',lbl:'Opportunities',tip:'Distinct Opportunity Number in range, any status.',val:opps.toLocaleString(),sub:'Distinct Opportunity Number'},
+    {ico:'%',lbl:'Converted %',tip:'Total Converted ÷ Potential Revenue.',val:(Math.round(pctConverted*100)/100)+'%',sub:'Converted ÷ Potential Revenue',cls:'green'},
+    {ico:'✖',lbl:'Sold Then Canceled',tip:'Sold estimates whose Parent Job Number now shows a Canceled status in the Jobs tab.',val:stcRows.length.toLocaleString(),sub:fmtM(stcAmount)+' in canceled parent jobs',cls:stcRows.length>0?'warn':''},
+  ];
+  grid.innerHTML=cards.map(c=>
+    '<div class="kpi '+(c.cls||'')+'">'
+    +'<div class="kpi-ico">'+c.ico+'</div>'
+    +'<div class="kpi-lbl">'+esc(c.lbl)+' <span class="tip-ic" data-tip="'+esc(c.tip)+'">ⓘ</span></div>'
+    +'<div class="kpi-val">'+c.val+'</div>'
+    +'<div class="kpi-sub">'+esc(c.sub)+'</div>'
+    +'</div>'
+  ).join('');
+}
+
+function renderEstTopSalesDay(rows){
+  const grid=document.getElementById('topDayGridEst');
+  if(!grid) return;
+  const units=[{key:'All',label:'All Business Units'}].concat([...new Set(rows.map(e=>e.bizUnit).filter(Boolean))].sort().map(b=>({key:b,label:b})));
+  const cards=units.map(u=>{
+    const scoped=u.key==='All' ? rows : rows.filter(e=>e.bizUnit===u.key);
+    const byDay=new Map();
+    scoped.forEach(e=>{
+      if(e.status!=='Sold') return;
+      const d8=estEffDate(e);
+      if(!d8) return;
+      byDay.set(d8,(byDay.get(d8)||0)+(e.subtotal||0));
+    });
+    let bestDay=null, bestAmt=0;
+    byDay.forEach((amt,d8)=>{ if(amt>bestAmt){ bestAmt=amt; bestDay=d8; } });
+    return { label:u.label, value: bestDay?fmtM(bestAmt):'—', sub: bestDay?fmtLongDate(bestDay):'No sales in range' };
+  });
+  grid.innerHTML=cards.map(c=>
+    '<div class="kpi"><div class="kpi-lbl">'+esc(c.label)+'</div><div class="kpi-val" style="font-size:20px">'+c.value+'</div><div class="kpi-sub">'+esc(c.sub)+'</div></div>'
+  ).join('');
+}
+
+// ── Granularity/bucket helpers (own copies, 'est'-prefixed to avoid any
+// collision with Bills/Jobs tab helpers) ──
+const EST_MONTH_ABBR=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function estMonthLabel(key){ const p=key.split('-'); return EST_MONTH_ABBR[parseInt(p[1],10)-1]+' '+p[0].slice(2); }
+function estMonthRange(from,to){
+  const out=[]; if(!from||!to) return out;
+  let y=parseInt(from.slice(0,4),10), m=parseInt(from.slice(5,7),10);
+  const ty=parseInt(to.slice(0,4),10), tm=parseInt(to.slice(5,7),10);
+  while(y<ty || (y===ty && m<=tm)){ out.push(y+'-'+String(m).padStart(2,'0')); m++; if(m>12){ m=1; y++; } }
+  return out;
+}
+function estDayRange(from,to){
+  const out=[]; if(!from||!to) return out;
+  let cur=new Date(from+'T00:00:00Z'); const end=new Date(to+'T00:00:00Z');
+  if(isNaN(cur)||isNaN(end)) return out;
+  while(cur<=end){ out.push(cur.toISOString().slice(0,10)); cur=new Date(cur.getTime()+86400000); }
+  return out;
+}
+function estDayLabel(d8){ const p=d8.split('-'); return EST_MONTH_ABBR[parseInt(p[1],10)-1]+' '+parseInt(p[2],10); }
+function estWeekStart(d8){
+  const d=new Date(d8+'T00:00:00Z');
+  const day=d.getUTCDay();
+  const diff=(day===0?6:day-1);
+  d.setUTCDate(d.getUTCDate()-diff);
+  return d.toISOString().slice(0,10);
+}
+function estWeekLabel(weekStartISO){ const p=weekStartISO.split('-'); return EST_MONTH_ABBR[parseInt(p[1],10)-1]+' '+parseInt(p[2],10); }
+function estPctBuckets(from,to,granularity){
+  if(granularity==='weekly'){
+    const keys=[]; let cur=estWeekStart(from); const last=estWeekStart(to);
+    while(cur<=last){ keys.push(cur); const d=new Date(cur+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()+7); cur=d.toISOString().slice(0,10); }
+    return { keys, label: estWeekLabel, bucketOf: d8=>estWeekStart(d8) };
+  }
+  if(granularity==='monthly') return { keys: estMonthRange(from,to), label: estMonthLabel, bucketOf: d8=>d8.slice(0,7) };
+  return { keys: estDayRange(from,to), label: estDayLabel, bucketOf: d8=>d8 };
+}
+function estFmtDollarK(v){ if(v===null||v===undefined) return '—'; return '$'+Math.round(v/1000).toLocaleString()+'K'; }
+
+let estWeeklyGranularity='weekly';
+function setEstWeeklyGranularity(g){
+  estWeeklyGranularity=g;
+  const seg=document.getElementById('estWeeklyGranularitySeg');
+  if(seg) seg.querySelectorAll('.seg-btn').forEach(b=>b.classList.toggle('active', b.dataset.g===g));
+  const r=estDateRange();
+  renderEstWeeklyChart(r.from, r.to);
+}
+const EST_CHARTS={};
+function destroyEstChart(id){ if(EST_CHARTS[id]){ EST_CHARTS[id].destroy(); delete EST_CHARTS[id]; } }
+
+function renderEstWeeklyChart(from,to){
+  const rows=estRangeRows(from,to);
+  const { keys, label, bucketOf } = estPctBuckets(from, to, estWeeklyGranularity);
+  const rowsByKey={}, convByKey={};
+  keys.forEach(k=>{ rowsByKey[k]=[]; convByKey[k]=0; });
+  rows.forEach(e=>{
+    const d8=estEffDate(e); if(!d8) return;
+    const k=bucketOf(d8); if(!(k in rowsByKey)) return;
+    rowsByKey[k].push(e);
+    if(e.status==='Sold') convByKey[k]+=e.subtotal||0;
+  });
+  const potByKey={}; keys.forEach(k=>{ potByKey[k]=estPotentialRevenue(rowsByKey[k]); });
+  destroyEstChart('estWeekly');
+  const ctx=document.getElementById('estWeeklyChart');
+  if(!ctx) return;
+  EST_CHARTS.estWeekly=new Chart(ctx,{
+    type:'bar',
+    data:{ labels: keys.map(label), datasets:[
+      { label:'Potential Revenue', data: keys.map(k=>potByKey[k]), backgroundColor:'#2563eb', borderRadius:4 },
+      { label:'Converted', data: keys.map(k=>convByKey[k]), backgroundColor:'#0fa572', borderRadius:4 },
+    ]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:true, position:'bottom'}, tooltip:{ callbacks:{ label:c=>c.dataset.label+': '+fmtM(c.parsed.y) } } },
+      scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>'$'+Math.round(Number(v)).toLocaleString() } } }
+    }
+  });
+}
+
+let estPctGranularity='daily';
+function setEstPctGranularity(g){
+  estPctGranularity=g;
+  const seg=document.getElementById('estPctGranularitySeg');
+  if(seg) seg.querySelectorAll('.seg-btn').forEach(b=>b.classList.toggle('active', b.dataset.g===g));
+  const r=estDateRange();
+  renderEstDailyPctChart(r.from, r.to);
+}
+function renderEstDailyPctChart(from,to){
+  const rows=estRangeRows(from,to);
+  const { keys, label, bucketOf } = estPctBuckets(from, to, estPctGranularity);
+  const rowsByKey={}, convByKey={};
+  keys.forEach(k=>{ rowsByKey[k]=[]; convByKey[k]=0; });
+  rows.forEach(e=>{
+    const d8=estEffDate(e); if(!d8) return;
+    const k=bucketOf(d8); if(!(k in rowsByKey)) return;
+    rowsByKey[k].push(e);
+    if(e.status==='Sold') convByKey[k]+=e.subtotal||0;
+  });
+  const potByKey={}; keys.forEach(k=>{ potByKey[k]=estPotentialRevenue(rowsByKey[k]); });
+  const pct=keys.map(k=> potByKey[k]>0 ? convByKey[k]/potByKey[k]*100 : null);
+  destroyEstChart('estDailyPct');
+  const ctx=document.getElementById('estDailyPctChart');
+  if(!ctx) return;
+  EST_CHARTS.estDailyPct=new Chart(ctx,{
+    type:'line',
+    data:{ labels: keys.map(label), datasets:[{ label:'Converted %', data: pct, borderColor:'#7c3aed', backgroundColor:'rgba(124,58,237,.12)', fill:true, tension:.3, pointRadius:3, spanGaps:true }] },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{ callbacks:{ label:c=>{
+          const k=keys[c.dataIndex];
+          if(c.parsed.y==null) return 'No estimates in this period';
+          return [ 'Converted: '+c.parsed.y.toFixed(1)+'%', 'Potential Revenue: '+estFmtDollarK(potByKey[k]), 'Total Converted: '+estFmtDollarK(convByKey[k]) ];
+        } } }
+      },
+      scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>v+'%' } } }
+    }
+  });
+}
+
+function barRightLabelsPlugin(formatter){
+  formatter = formatter || (v=>Number(v).toLocaleString());
+  return {
+    id:'barRightLabels',
+    afterDatasetsDraw(chart){
+      const { ctx } = chart;
+      chart.data.datasets.forEach((dataset,i)=>{
+        const meta=chart.getDatasetMeta(i);
+        if(meta.hidden) return;
+        meta.data.forEach((bar,index)=>{
+          const value=dataset.data[index];
+          if(value===null||value===undefined) return;
+          ctx.save();
+          ctx.fillStyle=getComputedStyle(document.body).getPropertyValue('--navy')||'#1a1a1a';
+          ctx.font='bold 11px sans-serif';
+          ctx.textAlign='left';
+          ctx.textBaseline='middle';
+          ctx.fillText(formatter(value), bar.x+6, bar.y);
+          ctx.restore();
+        });
+      });
+    }
+  };
+}
+
+function renderEstTechAvgTicketChart(rows){
+  const byTech=new Map();
+  rows.forEach(e=>{
+    if(e.status!=='Sold') return;
+    const t=estTechOf(e);
+    if(!byTech.has(t)) byTech.set(t,{total:0,count:0});
+    const b=byTech.get(t);
+    b.total+=e.subtotal||0; b.count+=1;
+  });
+  const withAvg=[...byTech.entries()].filter(([,b])=>b.count>0).map(([t,b])=>({ tech:t, avg:b.total/b.count, count:b.count, total:b.total }));
+  const sorted=withAvg.sort((a,b)=>b.avg-a.avg).slice(0,15);
+  destroyEstChart('estTechAvgTicket');
+  const ctx=document.getElementById('estTechAvgTicketChart');
+  if(!ctx) return;
+  EST_CHARTS.estTechAvgTicket=new Chart(ctx,{
+    type:'bar',
+    data:{ labels: sorted.map(x=>x.tech), datasets:[{ label:'Average Selling Ticket', data: sorted.map(x=>x.avg), backgroundColor:'#0e93a8', borderRadius:4 }] },
+    plugins:[ barRightLabelsPlugin(v=>fmtM(v)) ],
+    options:{
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      layout:{ padding:{ right:80 } },
+      plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:c=>{
+        const r=sorted[c.dataIndex];
+        return [ 'Avg Selling Ticket: '+fmtM(r.avg), 'Sold Estimates: '+r.count.toLocaleString(), 'Total Sold: '+fmtM(r.total) ];
+      } } } },
+      scales:{ x:{ beginAtZero:true, ticks:{ callback:v=>fmtM(v) } } }
+    }
+  });
+}
+
+function renderEstTechChart(rows){
+  const byTech=new Map();
+  rows.forEach(e=>{
+    const t=estTechOf(e);
+    if(!byTech.has(t)) byTech.set(t,{rows:[],converted:0});
+    const b=byTech.get(t);
+    b.rows.push(e);
+    if(e.status==='Sold') b.converted+=e.subtotal||0;
+  });
+  const withPct=[...byTech.entries()].map(([t,b])=>{
+    const potential=estPotentialRevenue(b.rows);
+    const rawPct=potential>0 ? (b.converted/potential*100) : 0;
+    const pct=Math.min(100, rawPct); // capped — one Opportunity can have multiple Sold estimates
+    return { tech:t, potential, converted:b.converted, pct };
+  });
+  const sorted=withPct.sort((a,b)=>b.pct-a.pct).slice(0,15);
+  destroyEstChart('estTech');
+  const ctx=document.getElementById('estTechChart');
+  if(!ctx) return;
+  EST_CHARTS.estTech=new Chart(ctx,{
+    type:'bar',
+    data:{ labels: sorted.map(x=>x.tech), datasets:[{ label:'Potential Revenue Converted %', data: sorted.map(x=>x.pct), backgroundColor:'#e08a1e', borderRadius:4 }] },
+    plugins:[ barRightLabelsPlugin(v=>Number(v).toFixed(1)+'%') ],
+    options:{
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      layout:{ padding:{ right:70 } },
+      plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:c=>{
+        const r=sorted[c.dataIndex];
+        return [ 'Converted %: '+r.pct.toFixed(1)+'%', 'Potential Revenue: '+fmtM(r.potential), 'Total Sold: '+fmtM(r.converted) ];
+      } } } },
+      scales:{ x:{ beginAtZero:true, max:100, ticks:{ callback:v=>v+'%' } } }
+    }
+  });
+}
+
+// One row per Parent Job Number (a customer can have several jobs; Job
+// Number / Parent Job Type / the ServiceTitan Open link only make sense at
+// the job level).
+function buildEstCustomerRows(rows){
+  const byJob=new Map();
+  function bucket(jobNumber){
+    const key=jobNumber || '(No Job Number)';
+    if(!byJob.has(key)) byJob.set(key, { jobNumber:key, customer:'', jobType:'', allRows:[], converted:0, soldTechs:new Set(), allTechs:new Set(), createdOn:'' });
+    return byJob.get(key);
+  }
+  rows.forEach(e=>{
+    const b=bucket(e.jobNumber);
+    if(!b.customer && e.customer) b.customer=e.customer;
+    if(!b.jobType && e.jobType) b.jobType=e.jobType;
+    b.allRows.push(e);
+    const t=estTechOf(e);
+    b.allTechs.add(t);
+    if(e.status==='Sold'){ b.converted+=e.subtotal||0; b.soldTechs.add(t); }
+    if(e.createdOn && (!b.createdOn || e.createdOn<b.createdOn)) b.createdOn=e.createdOn;
+  });
+  EST_CUST_ROWS=[...byJob.values()].map(b=>{
+    const potential=estPotentialRevenue(b.allRows);
+    const techSet=b.soldTechs.size ? b.soldTechs : b.allTechs;
+    const technician=[...techSet].sort().join(', ') || 'Unassigned';
+    return { customer: b.customer || '(No Customer Name)', jobNumber: b.jobNumber, jobType: b.jobType || '—', potential, converted: b.converted, technician, createdOn: b.createdOn };
+  });
+  EST_CUST_TOTALS = {
+    potential: estPotentialRevenue(rows),
+    converted: rows.filter(e=>e.status==='Sold').reduce((a,e)=>a+(e.subtotal||0),0),
+  };
+}
+
+let estCustSortKey='potential', estCustSortDir=-1, estCustPage=1;
+let EST_CUST_ROWS=[];
+let EST_CUST_TOTALS={ potential:0, converted:0 };
+const EST_CUST_SORT_TH={ customer:'estCustTh-customer', potential:'estCustTh-potential', jobNumber:'estCustTh-jobNumber', jobType:'estCustTh-jobType', converted:'estCustTh-converted', technician:'estCustTh-technician', createdOn:'estCustTh-createdOn' };
+function sortEstCust(key){
+  if(estCustSortKey===key) estCustSortDir*=-1; else { estCustSortKey=key; estCustSortDir = key==='customer' ? 1 : -1; }
+  estCustPage=1;
+  renderEstCustomerTable();
+}
+function goEstCustPage(p){ estCustPage=p; renderEstCustomerTable(); }
+function currentEstCustRows(){
+  const searchEl=document.getElementById('estCustSearch');
+  const q=(searchEl?searchEl.value:'').toLowerCase();
+  let rows=q ? EST_CUST_ROWS.filter(r=>r.customer.toLowerCase().includes(q) || String(r.jobNumber).toLowerCase().includes(q) || r.jobType.toLowerCase().includes(q)) : EST_CUST_ROWS.slice();
+  rows.sort((a,b)=>{
+    let va=a[estCustSortKey], vb=b[estCustSortKey];
+    if(typeof va==='number' && typeof vb==='number') return (va-vb)*estCustSortDir;
+    return String(va).localeCompare(String(vb))*estCustSortDir;
+  });
+  return rows;
+}
+function renderEstCustomerTable(){
+  const body=document.getElementById('estCustBody');
+  if(!body) return;
+  const rows=currentEstCustRows();
+  const countEl=document.getElementById('estCustCount');
+  if(countEl) countEl.textContent=rows.length.toLocaleString()+' job'+(rows.length!==1?'s':'');
+  Object.values(EST_CUST_SORT_TH).forEach(id=>{ const th=document.getElementById(id); if(th) th.classList.remove('sort-asc','sort-desc'); });
+  const activeTh=document.getElementById(EST_CUST_SORT_TH[estCustSortKey]);
+  if(activeTh) activeTh.classList.add(estCustSortDir===1?'sort-asc':'sort-desc');
+  const foot=document.getElementById('estCustFoot');
+  if(!rows.length){
+    body.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--gray-500);padding:20px">No estimates match the current filters</td></tr>';
+    if(foot) foot.innerHTML='';
+    renderJobPagination('estCustPagination', 0, 1, 'goEstCustPage');
+    return;
+  }
+  const start=(estCustPage-1)*PAGE_SIZE;
+  const page=rows.slice(start,start+PAGE_SIZE);
+  body.innerHTML=page.map(r=>
+    '<tr><td class="td-cust">'+esc(r.customer)+'</td>'
+    +'<td>'+fmtM(r.potential)+'</td>'
+    +'<td>'+fmtM(r.converted)+'</td>'
+    +'<td class="mono">'+esc(r.jobNumber)+'</td>'
+    +'<td>'+esc(r.jobType)+'</td>'
+    +'<td style="white-space:nowrap">'+fmtLongDate(r.createdOn)+'</td>'
+    +'<td>'+esc(r.technician)+'</td>'
+    +'<td>'+stJobLink(r.jobNumber)+'</td>'
+    +'</tr>'
+  ).join('');
+  const tot=EST_CUST_TOTALS;
+  if(foot) foot.innerHTML='<tr style="font-weight:700;background:var(--gray-100)">'
+    +'<td>TOTAL</td>'
+    +'<td>'+fmtM(tot.potential)+'</td>'
+    +'<td>'+fmtM(tot.converted)+'</td>'
+    +'<td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>'
+    +'</tr>';
+  renderJobPagination('estCustPagination', rows.length, estCustPage, 'goEstCustPage');
+}
+function exportEstCustomerXLSX(){
+  const rows=currentEstCustRows();
+  const tot=EST_CUST_TOTALS;
+  const body=rows.map(r=>[r.customer, r.potential, r.converted, r.jobNumber, r.jobType, fmtLongDate(r.createdOn), r.technician, r.jobNumber ? 'https://go.servicetitan.com/#/Job/Index/'+encodeURIComponent(r.jobNumber) : '']);
+  body.push(['TOTAL (full filtered range)', tot.potential, tot.converted, '', '', '', '', '']);
+  exportJobsXLSX('Coolbreeze_Estimates_CustomerBreakdown_'+todayISO()+'.xlsx',
+    ['Customer','Potential Revenue','Converted','Job Number','Parent Job Type','Estimate Created','Technician','Open (ServiceTitan)'],
+    body);
+}
+
+function applyEstFilters(){ renderEstimatesTab(); }
+function resetEstFilters(){
+  MS_SEL.estBiz.clear();
+  MS_SEL.estTech.clear();
+  MS_SEL.estCampaign.clear();
+  const canceledSel=document.getElementById('estCanceledSel');
+  if(canceledSel) canceledSel.value='';
+  const searchEl=document.getElementById('estCustSearch');
+  if(searchEl) searchEl.value='';
+  renderEstimatesTab();
+}
+
+async function fetchEstimatesBlob(){ return fetchBlobXLSX(ESTIMATES_CONFIG.sasUrl); }
+
+async function loadAndInitEstimates(){
+  document.getElementById('estDateFrom').value=monthStartISO();
+  document.getElementById('estDateTo').value=todayISO();
+
+  const cached=getCached(REPORT_KEY_ESTIMATES);
+  if(cached){
+    processEstimates(cached);
+    estimatesDataReady=true;
+    renderEstimatesTab();
+    document.getElementById('est-finfo').textContent=ALL_ESTIMATES.length.toLocaleString()+' estimate rows · cached, refreshing…';
+    try{
+      const rows=await fetchEstimatesBlob();
+      setCache(REPORT_KEY_ESTIMATES, rows);
+      processEstimates(rows);
+      renderEstimatesTab();
+    }catch(e){
+      console.warn('[Estimates BG refresh failed]', e);
+      document.getElementById('est-finfo').textContent+=' · ⚠ refresh failed: '+e.message.slice(0,80);
+    }
+    return;
+  }
+
+  try{
+    document.getElementById('est-finfo').textContent='Connecting to Azure…';
+    const rows=await fetchEstimatesBlob();
+    setCache(REPORT_KEY_ESTIMATES, rows);
+    processEstimates(rows);
+    estimatesDataReady=true;
+    renderEstimatesTab();
+  }catch(e){
+    console.error('[Estimates] Load error:', e);
+    document.getElementById('est-finfo').textContent='⚠ Failed to load: '+e.message;
+  }
+}
+
+// Add the Estimates cache key to "Hard Refresh" (clearAllCache) too.
+const _origClearAllCache2=clearAllCache;
+clearAllCache=function(){
+  _origClearAllCache2();
+  try{ localStorage.removeItem('cb_'+REPORT_KEY_ESTIMATES); }catch(e){}
+};
+
+document.addEventListener('DOMContentLoaded', loadAndInitEstimates);
+</script>
+
 </body>
 </html>
