@@ -301,6 +301,10 @@ td.mkt-placeholder-cell{color:var(--gray-500)}
     <span class="sidebar-icon">💵</span>
     <span class="sidebar-label">Accounts Receivable</span>
   </button>
+  <button class="sidebar-item" id="nav-db6" onclick="showDB(6)" title="Memberships">
+    <span class="sidebar-icon">👥</span>
+    <span class="sidebar-label">Memberships</span>
+  </button>
   <button class="sidebar-item active" id="nav-db1" onclick="showDB(1)" title="Accounting Reconciliation">
     <span class="sidebar-icon">🧾</span>
     <span class="sidebar-label">Reconciliation</span>
@@ -1181,6 +1185,95 @@ td.mkt-placeholder-cell{color:var(--gray-500)}
 </div>
 </div><!-- /db5 -->
 
+<!-- ══════════════════════════════════════════ -->
+<!-- DASHBOARD 6: MEMBERSHIPS                    -->
+<!-- ══════════════════════════════════════════ -->
+<div class="db-panel" id="db6">
+<div class="fbar">
+  <label>Memberships</label>
+  <button class="btn-reset" onclick="loadAndInitMemberships()">↻ Refresh</button>
+  <span class="finfo" id="mem2-finfo">Loading membership data…</span>
+</div>
+
+<div class="main">
+  <div class="section-lbl">👥 Membership Overview</div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px">
+    <div class="kpi green"><div class="kpi-ico">✅</div><div class="kpi-lbl">Active Members Today <span class="tip-ic" data-tip="Current Status = Active, as of last refresh.">ⓘ</span></div><div class="kpi-val" id="m2k-active">—</div><div class="kpi-sub" id="m2k-active-sub">of total</div></div>
+    <div class="kpi amber"><div class="kpi-ico">⏱</div><div class="kpi-lbl">Expired <span class="tip-ic" data-tip="Current Status = Expired.">ⓘ</span></div><div class="kpi-val" id="m2k-expired">—</div><div class="kpi-sub" id="m2k-expired-sub">of total</div></div>
+    <div class="kpi red"><div class="kpi-ico">✖</div><div class="kpi-lbl">Canceled <span class="tip-ic" data-tip="Current Status = Canceled.">ⓘ</span></div><div class="kpi-val" id="m2k-canceled">—</div><div class="kpi-sub" id="m2k-canceled-sub">of total</div></div>
+    <div class="kpi red"><div class="kpi-ico">📉</div><div class="kpi-lbl">Churn Rate <span class="tip-ic" data-tip="Canceled ÷ (Active + Canceled). Excludes Expired memberships (lapsed/non-renewed, not an explicit cancellation) to isolate voluntary churn. The export has no cancellation date, so this is an overall rate, not a monthly/annualized one.">ⓘ</span></div><div class="kpi-val" id="m2k-churn">—</div><div class="kpi-sub" id="m2k-churn-sub">of Active + Canceled</div></div>
+  </div>
+
+  <div class="section-lbl">📊 Plan &amp; Customer Mix</div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px">
+    <div class="kpi"><div class="kpi-ico">🧑‍🤝‍🧑</div><div class="kpi-lbl">Distinct Customers <span class="tip-ic" data-tip="Unique Customer Name values across Active membership rows only (Expired/Canceled excluded).">ⓘ</span></div><div class="kpi-val" id="m2k-custs">—</div><div class="kpi-sub">active customers</div></div>
+    <div class="kpi"><div class="kpi-ico">🏠</div><div class="kpi-lbl">Multi-Membership Customers <span class="tip-ic" data-tip="Customers with more than one Active membership row (e.g. multiple systems/units currently on a plan). Expired/Canceled rows don't count.">ⓘ</span></div><div class="kpi-val" id="m2k-multi">—</div><div class="kpi-sub">2+ active memberships</div></div>
+    <div class="kpi red"><div class="kpi-ico">💳</div><div class="kpi-lbl">Active, No Payment Method on File <span class="tip-ic" data-tip="Active memberships with a blank Preferred Payment Method — a renewal/billing risk.">ⓘ</span></div><div class="kpi-val" id="m2k-nopay">—</div><div class="kpi-sub">renewal risk</div></div>
+  </div>
+
+  <div class="section-lbl">💰 Revenue</div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+    <div class="kpi gold"><div class="kpi-ico">💰</div><div class="kpi-lbl">Active Deferred Revenue Balance <span class="tip-ic" data-tip="Sum of Deferred Revenue Balance across Active memberships — the outstanding value still owed to members on current plans.">ⓘ</span></div><div class="kpi-val" id="m2k-drb">—</div><div class="kpi-sub">active plans</div></div>
+    <div class="kpi"><div class="kpi-ico">📊</div><div class="kpi-lbl">Avg Last Billing Amount <span class="tip-ic" data-tip="Average of Last Billing Amount across memberships with a nonzero billing amount.">ⓘ</span></div><div class="kpi-val" id="m2k-avgbill">—</div><div class="kpi-sub">per billed membership</div></div>
+    <div class="kpi green"><div class="kpi-ico">✔</div><div class="kpi-lbl">Total Recognized Revenue <span class="tip-ic" data-tip="Sum of Recognized Revenue across every membership row — lifetime-to-date, not filtered by status.">ⓘ</span></div><div class="kpi-val" id="m2k-recog">—</div><div class="kpi-sub">lifetime to date</div></div>
+  </div>
+
+  <div class="row2" style="margin-bottom:20px">
+    <div class="card"><div class="ct">Status Breakdown</div><div class="chart-wrap" style="height:250px"><canvas id="memStatusChart"></canvas></div></div>
+    <div class="card"><div class="ct">Plan Type by Status <span class="tip-ic" data-tip="Membership Type collapsed to its base plan (Classic / Performance / Essential), stacked by Current Status.">ⓘ</span></div><div class="chart-wrap" style="height:250px"><canvas id="memPlanStatusChart"></canvas></div></div>
+  </div>
+
+  <div style="margin-bottom:20px">
+    <div class="card"><div class="ct">New Memberships Started <span class="tip-ic" data-tip="Count of memberships whose 'From' date falls in the selected year, by month. Defaults to the current year, Jan through this month (year-to-date). ServiceTitan's membership export has no cancellation-date field, so this tracks new starts only, not net growth.">ⓘ</span><select id="memGrowthYearSel" onchange="renderMembershipCharts()" class="chart-yr-sel" style="margin-left:auto"></select></div><div class="chart-wrap" style="height:230px"><canvas id="memGrowthChart"></canvas></div></div>
+  </div>
+
+  <div class="row2" style="margin-bottom:20px">
+    <div class="card"><div class="ct">Payment Method on File (Active Memberships) <span class="tip-ic" data-tip="Preferred Payment Method for Active memberships only, grouped by card brand / Check / none on file.">ⓘ</span></div><div class="chart-wrap" style="height:250px"><canvas id="memPayMethodChart"></canvas></div></div>
+    <div class="card"><div class="ct">Active Deferred Revenue Balance by Plan <span class="tip-ic" data-tip="Sum of Deferred Revenue Balance across Active memberships, grouped by base plan.">ⓘ</span></div><div class="chart-wrap" style="height:250px"><canvas id="memDrbByPlanChart"></canvas></div></div>
+  </div>
+
+  <div class="tcard" style="margin-bottom:20px">
+    <div class="thead-row"><div class="tcard-title">Renewals Due Soon <span class="tip-ic" data-tip="Active memberships with a Membership 'To' date within the next 90 days. Most Active memberships auto-renew with no To date and won't appear here — only fixed-term memberships with a known end date.">ⓘ</span></div></div>
+    <div class="tbl-wrap" style="max-height:280px">
+      <table>
+        <thead><tr><th>Customer</th><th>Plan</th><th>Renewal/End Date</th><th>Days Until</th><th>Last Billing Amount</th></tr></thead>
+        <tbody id="memRenewalsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tcard">
+    <div class="thead-row">
+      <div class="tcard-title">Membership Detail — Full List</div>
+      <div class="thead-right">
+        <input class="search-box" type="text" id="memDetailSearch" placeholder="Search customer or plan…" oninput="onMemDetailSearchInput(this.value)">
+        <span class="tcnt" id="mem2-detail-count">— memberships</span>
+        <button class="btn-export" onclick="exportMembershipsXLSX()">⬇ Export Excel</button>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th onclick="sortMem('customerName')" id="m2th-customerName">Customer</th>
+          <th onclick="sortMem('planBase')" id="m2th-planBase">Plan</th>
+          <th onclick="sortMem('status')" id="m2th-status">Status</th>
+          <th onclick="sortMem('from')" id="m2th-from" class="sort-desc">Started</th>
+          <th onclick="sortMem('to')" id="m2th-to">Renewal/End</th>
+          <th onclick="sortMem('lastBilling')" id="m2th-lastBilling">Last Billing</th>
+          <th onclick="sortMem('salePrice')" id="m2th-salePrice">Sale/Renewal Price</th>
+          <th onclick="sortMem('deferredBalance')" id="m2th-deferredBalance">Deferred Balance</th>
+          <th onclick="sortMem('recognizedRevenue')" id="m2th-recognizedRevenue">Recognized Revenue</th>
+          <th onclick="sortMem('paymentMethodCat')" id="m2th-paymentMethodCat">Payment Method</th>
+          <th onclick="sortMem('locationId')" id="m2th-locationId">Location ID</th>
+        </tr></thead>
+        <tbody id="memDetailBody2"></tbody>
+      </table>
+    </div>
+    <div class="pg" id="memDetailPagination2"></div>
+  </div>
+</div>
+</div><!-- /db6 -->
+
 </div><!-- /app-shell -->
 
 <div class="load-overlay" id="loadOverlay">
@@ -1321,8 +1414,8 @@ const QB_BILLS_CONFIG = {
 // balance ledger, apiKey quickbooksMembership) is UNCHANGED, still fetched
 // via GAS_URL — Ariel only sent the ServiceTitan-side export this time.
 const ST_MEMBERSHIP_CONFIG = {
-  // Blob-scoped SAS token (sr=b), valid through 2030-09-12.
-  sasUrl: 'https://coolbreeze.blob.core.windows.net/coolbreeze/Memberships.xlsx?sp=r&st=2026-09-12T16:58:45Z&se=2030-09-13T01:13:45Z&spr=https&sv=2026-02-06&sr=b&sig=3S2VbY7nQir17uaFjiTqKgsRljttP9GUi0V9MwyDBtM%3D'
+  // Blob-scoped SAS token (sr=b), valid through 2030-09-16 (refreshed 2026-09-16).
+  sasUrl: 'https://coolbreeze.blob.core.windows.net/coolbreeze/Memberships.xlsx?sp=r&st=2026-09-16T10:59:36Z&se=2030-09-16T19:14:36Z&spr=https&sv=2026-02-06&sr=b&sig=k5gVp1OV4nSmX7p%2F%2FLb9oq%2B0rdTCF3g%2Bda1XrctrHa8%3D'
 };
 const VENDOR_TXN_FIELD_ALIASES = {
   vendor:     ['vendor name','vendor'],
@@ -1956,6 +2049,7 @@ function showDB(n){
   // display:none renders at 0x0 until explicitly resized — same fix already
   // applied to the Bills<->Membership view switch below (switchReconView).
   if(n===4 && typeof MKT_CHARTS!=='undefined'){ Object.values(MKT_CHARTS).forEach(c=>{ if(c)c.resize(); }); }
+  if(n===6 && typeof MEM2_CHARTS!=='undefined'){ Object.values(MEM2_CHARTS).forEach(c=>{ if(c)c.resize(); }); }
 }
 
 // Bills Reconciliation <-> Membership Reconciliation view switch (dropdown
@@ -2447,6 +2541,11 @@ function renderAll(qbRows,stRows,vendorRows,qbMemRows,stMemRows){
   applyAll();
   applyVendorCoverage();
   applyMembership();
+  // Hands the Memberships tab (db6) the SAME raw stMemRows just fetched
+  // above, so it never re-fetches ST_MEMBERSHIP_CONFIG's blob just to
+  // render its own headcount/retention/revenue view — same cross-tab hook
+  // convention as refreshMktAfterJobsLoad()/refreshJobsAfterARLoad().
+  if(typeof refreshMembershipsTabAfterReconLoad==='function') refreshMembershipsTabAfterReconLoad(stMemRows||[]);
 }
 
 // ── Vendor Invoice Coverage table: respects the main From/To date range
@@ -5537,6 +5636,357 @@ clearAllCache=function(){
 };
 
 document.addEventListener('DOMContentLoaded', loadAndInitAR);
+</script>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════
+// MEMBERSHIPS TAB (db6, added 2026-09-16) — headcount / growth / retention /
+// revenue insights on the ServiceTitan Membership Balance export, separate
+// from the QuickBooks-vs-ServiceTitan Membership Balance RECONCILIATION
+// already on the Reconciliation tab's Membership view (db1). Reuses the
+// SAME Azure blob (ST_MEMBERSHIP_CONFIG, defined near the top of the file)
+// but does NOT re-fetch it on initial load: db1's loadAndInit() always
+// fires on DOMContentLoaded regardless of which tab is visually active, and
+// its renderAll() now calls refreshMembershipsTabAfterReconLoad(stMemRows)
+// (guarded by a typeof check, same cross-tab hook convention already used
+// for refreshMktAfterJobsLoad()/refreshJobsAfterARLoad()) to hand this tab
+// the same raw rows for free. This tab's own "↻ Refresh" button does do its
+// own fetch (reusing REPORT_KEY_ST_MEMBERSHIP's existing cache slot rather
+// than adding a second one, so a refresh here also keeps db1's Membership
+// Reconciliation view's cache fresh).
+//
+// Own top-level <script> block per the file's per-tab isolation convention;
+// reuses fetchSTMembershipBlob()/ST_MEMBERSHIP_CONFIG/REPORT_KEY_ST_MEMBERSHIP,
+// toObjects()/pickField()/normKey(), getCached/setCache/clearAllCache,
+// fmtM/fmtFull/fmtDate/esc/showDB/PAGE_SIZE/renderJobPagination/
+// exportJobsXLSX/todayISO from earlier script blocks instead of redefining
+// them.
+//
+// Field mapping — ServiceTitan's export columns: Customer ID, Customer
+// Name, Last Billing Amount, Membership Sale/Renewal Price, Membership
+// Type, Current Status, Membership ID, Membership Duration, From, To,
+// Location ID, Status As Of, Preferred Payment Method, Deferred Revenue,
+// Recognized Revenue, Deferred Revenue Balance, Initial Deferred Revenue.
+// Checked on the real 597-row file: "Status As Of" duplicates Current
+// Status on every row (not a date despite the name) — not used here.
+// Location ID is ~1:1 with rows (513 distinct across 597), so it's not a
+// meaningful grouping dimension and isn't charted, only shown per-row in
+// the detail table. "To" is blank on ~72% of rows (auto-renewing/no fixed
+// term) — the Renewals Due Soon table only ever surfaces the minority of
+// Active memberships that DO carry a fixed end date, by design (no fake
+// precision: a blank To is a real "no known end date", not a missing one).
+// ══════════════════════════════════════════════════════════════════════════
+const MEM2_FIELD_ALIASES = {
+  customerId:        ['customer id'],
+  customer:          ['customer name','customer'],
+  status:            ['current status','status'],
+  planType:          ['membership type','membership name','type'],
+  membershipId:      ['membership id','membership #','membership number'],
+  from:              ['from','start date','membership start'],
+  to:                ['to','end date','membership end'],
+  lastBilling:       ['last billing amount','last billing'],
+  salePrice:         ['membership sale/renewal price','sale/renewal price','renewal price'],
+  paymentMethod:     ['preferred payment method','payment method'],
+  deferredRevenue:   ['deferred revenue'],
+  recognizedRevenue: ['recognized revenue'],
+  deferredBalance:   ['deferred revenue balance','deferred balance','balance'],
+  initialDeferred:   ['initial deferred revenue'],
+  locationId:        ['location id'],
+};
+
+function mem2PlanBase(t){
+  if(!t) return 'Other';
+  const s=String(t);
+  if(s.startsWith('Classic Plan')) return 'Classic Plan';
+  if(s.startsWith('Performance Plan')) return 'Performance Plan';
+  if(s.startsWith('Essential Plan')) return 'Essential Plan';
+  return 'Other';
+}
+function mem2PayCat(v){
+  const s=(v==null?'':String(v)).trim();
+  if(!s) return 'None on File';
+  if(/^visa/i.test(s)) return 'Visa';
+  if(/^master\s*card/i.test(s)) return 'Mastercard';
+  if(/^(american\s*express|amex)/i.test(s)) return 'Amex';
+  if(/^discover/i.test(s)) return 'Discover';
+  if(/^check$/i.test(s)) return 'Check';
+  return 'Other';
+}
+
+function buildMembershipsTabRows(raw){
+  const objs=toObjects(raw||[]);
+  return objs.map(obj=>{
+    const customerNameRaw=pickField(obj,MEM2_FIELD_ALIASES.customer);
+    if(customerNameRaw==null || !String(customerNameRaw).trim()) return null;
+    const statusRaw=pickField(obj,MEM2_FIELD_ALIASES.status);
+    const status=(statusRaw==null?'':String(statusRaw).trim())||'Unknown';
+    const planRawVal=pickField(obj,MEM2_FIELD_ALIASES.planType);
+    const fromRaw=pickField(obj,MEM2_FIELD_ALIASES.from);
+    const toRaw=pickField(obj,MEM2_FIELD_ALIASES.to);
+    const payRaw=pickField(obj,MEM2_FIELD_ALIASES.paymentMethod);
+    return {
+      customerId: pickField(obj,MEM2_FIELD_ALIASES.customerId) || '',
+      customerName: String(customerNameRaw).trim(),
+      status,
+      planRaw: planRawVal==null?'':String(planRawVal).trim(),
+      planBase: mem2PlanBase(planRawVal),
+      membershipId: pickField(obj,MEM2_FIELD_ALIASES.membershipId) || '',
+      from: (fromRaw instanceof Date) ? fromRaw : null,
+      to: (toRaw instanceof Date) ? toRaw : null,
+      lastBilling: Number(pickField(obj,MEM2_FIELD_ALIASES.lastBilling)) || 0,
+      salePrice: Number(pickField(obj,MEM2_FIELD_ALIASES.salePrice)) || 0,
+      paymentMethodRaw: payRaw==null?'':String(payRaw).trim(),
+      paymentMethodCat: mem2PayCat(payRaw),
+      deferredRevenue: Number(pickField(obj,MEM2_FIELD_ALIASES.deferredRevenue)) || 0,
+      recognizedRevenue: Number(pickField(obj,MEM2_FIELD_ALIASES.recognizedRevenue)) || 0,
+      deferredBalance: Number(pickField(obj,MEM2_FIELD_ALIASES.deferredBalance)) || 0,
+      initialDeferred: Number(pickField(obj,MEM2_FIELD_ALIASES.initialDeferred)) || 0,
+      locationId: pickField(obj,MEM2_FIELD_ALIASES.locationId) || '',
+    };
+  }).filter(Boolean);
+}
+
+let ALL_MEMBERSHIPS2=[];
+let mem2DataReady=false, mem2LoadedAt=null;
+let mem2SortKey='from', mem2SortDir=-1;
+let mem2Page=1;
+let mem2SearchQuery='';
+let mem2SearchTimer;
+const MEM2_CHARTS={};
+function destroyMem2Chart(id){ if(MEM2_CHARTS[id]){ MEM2_CHARTS[id].destroy(); delete MEM2_CHARTS[id]; } }
+const MEM2_PALETTE=['#2563eb','#0e93a8','#0fa572','#e08a1e','#7c3aed','#db2777'];
+const MEM2_STATUS_COLORS={Active:'#0fa572',Expired:'#e08a1e',Canceled:'#dc2626',Unknown:'#9fb3c2'};
+const MEM2_PLAN_ORDER=['Classic Plan','Performance Plan','Essential Plan','Other'];
+const MEM2_STATUS_PILL={Active:'ar-current',Expired:'ar-3060',Canceled:'ar-90plus'};
+const MEM2_TH={customerName:'m2th-customerName',planBase:'m2th-planBase',status:'m2th-status',from:'m2th-from',to:'m2th-to',lastBilling:'m2th-lastBilling',salePrice:'m2th-salePrice',deferredBalance:'m2th-deferredBalance',recognizedRevenue:'m2th-recognizedRevenue',paymentMethodCat:'m2th-paymentMethodCat',locationId:'m2th-locationId'};
+
+function renderMem2KPIs(){
+  const rows=ALL_MEMBERSHIPS2;
+  const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
+  const total=rows.length;
+  const pct=n=>total?(Math.round(n/total*1000)/10)+'% of total':'—';
+  const active=rows.filter(r=>r.status==='Active');
+  const expired=rows.filter(r=>r.status==='Expired');
+  const canceled=rows.filter(r=>r.status==='Canceled');
+
+  set('m2k-active', active.length.toLocaleString());
+  set('m2k-active-sub', pct(active.length));
+  set('m2k-expired', expired.length.toLocaleString());
+  set('m2k-expired-sub', pct(expired.length));
+  set('m2k-canceled', canceled.length.toLocaleString());
+  set('m2k-canceled-sub', pct(canceled.length));
+
+  // Canceled ÷ (Active + Canceled) — excludes Expired (lapsed/non-renewed,
+  // not an explicit cancellation) so this isolates voluntary churn. Per
+  // Ariel (2026-09-16): no cancellation-date field exists in this export,
+  // so this is an overall rate, not a monthly/annualized one.
+  const churnDenom=active.length+canceled.length;
+  const churnRate=churnDenom ? (canceled.length/churnDenom*100) : 0;
+  set('m2k-churn', churnDenom ? churnRate.toFixed(1)+'%' : '—');
+  set('m2k-churn-sub', canceled.length.toLocaleString()+' of '+churnDenom.toLocaleString()+' (Active + Canceled)');
+
+  // Per Ariel (2026-09-16): scoped to Active memberships only — a customer
+  // whose only rows are Expired/Canceled shouldn't count as a distinct
+  // (or multi-membership) customer "today".
+  const custCounts={};
+  active.forEach(r=>{ custCounts[r.customerName]=(custCounts[r.customerName]||0)+1; });
+  const custNames=Object.keys(custCounts);
+  const multi=custNames.filter(n=>custCounts[n]>1).length;
+  set('m2k-custs', custNames.length.toLocaleString());
+  set('m2k-multi', multi.toLocaleString());
+
+  const noPay=active.filter(r=>r.paymentMethodCat==='None on File');
+  set('m2k-nopay', noPay.length.toLocaleString());
+
+  const drb=active.reduce((s,r)=>s+r.deferredBalance,0);
+  set('m2k-drb', fmtM(drb));
+
+  const billed=rows.filter(r=>r.lastBilling>0);
+  const avgBill=billed.length ? billed.reduce((s,r)=>s+r.lastBilling,0)/billed.length : 0;
+  set('m2k-avgbill', fmtM(avgBill));
+
+  const recog=rows.reduce((s,r)=>s+r.recognizedRevenue,0);
+  set('m2k-recog', fmtM(recog));
+}
+
+function renderMembershipCharts(){
+  const rows=ALL_MEMBERSHIPS2;
+  const statuses=['Active','Expired','Canceled'];
+  const knownCount=statuses.reduce((s,st)=>s+rows.filter(r=>r.status===st).length,0);
+  const otherCount=rows.length-knownCount;
+  const statusLabels=otherCount>0 ? [...statuses,'Other'] : statuses;
+
+  destroyMem2Chart('status');
+  MEM2_CHARTS.status=new Chart(document.getElementById('memStatusChart'),{
+    type:'doughnut',
+    data:{labels:statusLabels,datasets:[{data:statusLabels.map(l=>l==='Other'?otherCount:rows.filter(r=>r.status===l).length),backgroundColor:statusLabels.map(l=>MEM2_STATUS_COLORS[l]||'#9fb3c2'),borderWidth:2,borderColor:'#fff'}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:10.5}}},tooltip:{callbacks:{label:c=>' '+c.label+': '+c.parsed+(rows.length?' ('+Math.round(c.parsed/rows.length*1000)/10+'%)':'')}}}}
+  });
+
+  const plans=[...new Set(rows.map(r=>r.planBase))].sort((a,b)=>MEM2_PLAN_ORDER.indexOf(a)-MEM2_PLAN_ORDER.indexOf(b));
+  destroyMem2Chart('planStatus');
+  MEM2_CHARTS.planStatus=new Chart(document.getElementById('memPlanStatusChart'),{
+    type:'bar',
+    data:{labels:plans,datasets:statuses.map(st=>({label:st,data:plans.map(p=>rows.filter(r=>r.planBase===p&&r.status===st).length),backgroundColor:MEM2_STATUS_COLORS[st],stack:'s',borderRadius:2}))},
+    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:10.5}}}},scales:{x:{stacked:true,beginAtZero:true,ticks:{precision:0}},y:{stacked:true}}}
+  });
+
+  const yearSel=document.getElementById('memGrowthYearSel');
+  const years=[...new Set(rows.filter(r=>r.from).map(r=>r.from.getFullYear()))].sort((a,b)=>b-a);
+  if(yearSel && yearSel.options.length===0 && years.length){
+    years.forEach(y=>{ const o=document.createElement('option'); o.value=y; o.textContent=y; yearSel.appendChild(o); });
+  }
+  const nowYear=new Date().getFullYear();
+  const selYear=parseInt((yearSel&&yearSel.value)||'',10) || (years.includes(nowYear)?nowYear:(years[0]||nowYear));
+  const lastMonth=(selYear===nowYear) ? new Date().getMonth() : 11;
+  const MONTH_ABBR=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const counts=Array(lastMonth+1).fill(0);
+  rows.forEach(r=>{
+    if(r.from && r.from.getFullYear()===selYear){
+      const m=r.from.getMonth();
+      if(m<=lastMonth) counts[m]++;
+    }
+  });
+  destroyMem2Chart('growth');
+  MEM2_CHARTS.growth=new Chart(document.getElementById('memGrowthChart'),{
+    type:'bar',
+    data:{labels:MONTH_ABBR.slice(0,lastMonth+1),datasets:[{label:'New Memberships',data:counts,backgroundColor:'#2563eb',borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}}
+  });
+
+  const activeRows=rows.filter(r=>r.status==='Active');
+  const pmOrder=['Visa','Mastercard','Amex','Discover','Check','Other','None on File'];
+  const pmCats=[...new Set(activeRows.map(r=>r.paymentMethodCat))].sort((a,b)=>pmOrder.indexOf(a)-pmOrder.indexOf(b));
+  destroyMem2Chart('pay');
+  MEM2_CHARTS.pay=new Chart(document.getElementById('memPayMethodChart'),{
+    type:'doughnut',
+    data:{labels:pmCats,datasets:[{data:pmCats.map(c=>activeRows.filter(r=>r.paymentMethodCat===c).length),backgroundColor:pmCats.map((c,i)=>c==='None on File'?'#dc2626':MEM2_PALETTE[i%MEM2_PALETTE.length]),borderWidth:2,borderColor:'#fff'}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:10.5}}},tooltip:{callbacks:{label:c=>' '+c.label+': '+c.parsed+(activeRows.length?' ('+Math.round(c.parsed/activeRows.length*1000)/10+'%)':'')}}}}
+  });
+
+  destroyMem2Chart('drbPlan');
+  MEM2_CHARTS.drbPlan=new Chart(document.getElementById('memDrbByPlanChart'),{
+    type:'bar',
+    data:{labels:plans,datasets:[{label:'Deferred Balance',data:plans.map(p=>activeRows.filter(r=>r.planBase===p).reduce((s,r)=>s+r.deferredBalance,0)),backgroundColor:'#0e93a8',borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+fmtFull(c.parsed.x)}}},scales:{x:{beginAtZero:true,ticks:{callback:v=>fmtM(v)}}}}
+  });
+}
+
+function renderMem2Renewals(){
+  const body=document.getElementById('memRenewalsBody');
+  if(!body) return;
+  const now=new Date(); now.setHours(0,0,0,0);
+  const horizon=new Date(now.getTime()+90*24*60*60*1000);
+  const soon=ALL_MEMBERSHIPS2.filter(r=>r.status==='Active' && r.to && r.to>=now && r.to<=horizon).sort((a,b)=>a.to-b.to);
+  body.innerHTML = soon.map(r=>{
+    const days=Math.round((r.to-now)/(24*60*60*1000));
+    const cls = days<=14?'ar-90plus':(days<=30?'ar-3060':'ar-current');
+    return `<tr><td class="td-cust">${esc(r.customerName)}</td><td>${esc(r.planRaw)||'—'}</td><td style="white-space:nowrap">${fmtDate(r.to)}</td><td><span class="status-pill ${cls}">${days} day(s)</span></td><td class="td-val">${fmtFull(r.lastBilling)}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--gray-500);padding:20px">No Active memberships have a known renewal/end date within the next 90 days.</td></tr>';
+}
+
+function currentMem2Rows(){
+  let list=ALL_MEMBERSHIPS2.slice();
+  if(mem2SearchQuery){
+    list=list.filter(r=>((r.customerName||'')+' '+(r.planRaw||'')+' '+(r.status||'')).toLowerCase().includes(mem2SearchQuery));
+  }
+  list.sort((a,b)=>{
+    let av=a[mem2SortKey], bv=b[mem2SortKey];
+    if(av instanceof Date) av=av.getTime();
+    if(bv instanceof Date) bv=bv.getTime();
+    if(typeof av==='string') av=av.toLowerCase();
+    if(typeof bv==='string') bv=bv.toLowerCase();
+    if(av==null) av=-Infinity;
+    if(bv==null) bv=-Infinity;
+    if(av<bv) return mem2SortDir===1?-1:1;
+    if(av>bv) return mem2SortDir===1?1:-1;
+    return 0;
+  });
+  return list;
+}
+function sortMem(key){ if(mem2SortKey===key) mem2SortDir*=-1; else { mem2SortKey=key; mem2SortDir=(key==='from'||key==='to')?-1:1; } mem2Page=1; renderMem2Detail(); }
+function goMem2Page(p){ mem2Page=p; renderMem2Detail(); }
+function onMemDetailSearchInput(v){
+  clearTimeout(mem2SearchTimer);
+  mem2SearchTimer=setTimeout(()=>{ mem2SearchQuery=String(v||'').trim().toLowerCase(); mem2Page=1; renderMem2Detail(); },200);
+}
+function renderMem2Detail(){
+  const body=document.getElementById('memDetailBody2');
+  if(!body) return;
+  if(!mem2DataReady){ body.innerHTML='<tr><td colspan="11" style="text-align:center;color:var(--gray-500);padding:20px">Loading…</td></tr>'; return; }
+  const list=currentMem2Rows();
+  const cntEl=document.getElementById('mem2-detail-count');
+  if(cntEl) cntEl.textContent=list.length.toLocaleString()+' membership(s)';
+  Object.values(MEM2_TH).forEach(id=>{ const th=document.getElementById(id); if(th) th.classList.remove('sort-asc','sort-desc'); });
+  const activeTh=document.getElementById(MEM2_TH[mem2SortKey]);
+  if(activeTh) activeTh.classList.add(mem2SortDir===1?'sort-asc':'sort-desc');
+  if(!list.length){
+    body.innerHTML='<tr><td colspan="11" style="text-align:center;color:var(--gray-500);padding:20px">No memberships match the current search.</td></tr>';
+    renderJobPagination('memDetailPagination2',0,1,'goMem2Page');
+    return;
+  }
+  const totalPages=Math.max(1,Math.ceil(list.length/PAGE_SIZE));
+  if(mem2Page>totalPages) mem2Page=totalPages;
+  const start=(mem2Page-1)*PAGE_SIZE;
+  const page=list.slice(start,start+PAGE_SIZE);
+  body.innerHTML=page.map(r=>`<tr>
+    <td class="td-cust">${esc(r.customerName)}</td>
+    <td>${esc(r.planRaw)||'—'}</td>
+    <td><span class="status-pill ${MEM2_STATUS_PILL[r.status]||''}">${esc(r.status)}</span></td>
+    <td style="white-space:nowrap">${r.from?fmtDate(r.from):'—'}</td>
+    <td style="white-space:nowrap">${r.to?fmtDate(r.to):'—'}</td>
+    <td class="td-val">${fmtFull(r.lastBilling)}</td>
+    <td class="td-val">${fmtFull(r.salePrice)}</td>
+    <td class="td-val">${fmtFull(r.deferredBalance)}</td>
+    <td class="td-val">${fmtFull(r.recognizedRevenue)}</td>
+    <td>${esc(r.paymentMethodCat)}</td>
+    <td>${esc(r.locationId)||'—'}</td>
+  </tr>`).join('');
+  renderJobPagination('memDetailPagination2', list.length, mem2Page, 'goMem2Page');
+}
+function exportMembershipsXLSX(){
+  const rows=currentMem2Rows();
+  exportJobsXLSX('Coolbreeze_Memberships_'+todayISO()+'.xlsx',
+    ['Customer','Plan','Status','Started','Renewal/End','Last Billing','Sale/Renewal Price','Deferred Balance','Recognized Revenue','Payment Method','Location ID'],
+    rows.map(r=>[r.customerName, r.planRaw, r.status, r.from?fmtDate(r.from):'', r.to?fmtDate(r.to):'', r.lastBilling, r.salePrice, r.deferredBalance, r.recognizedRevenue, r.paymentMethodCat, r.locationId]));
+}
+
+function renderMem2Tab(){
+  renderMem2KPIs();
+  renderMembershipCharts();
+  renderMem2Renewals();
+  renderMem2Detail();
+  const finfo=document.getElementById('mem2-finfo');
+  if(finfo) finfo.textContent = mem2LoadedAt ? 'Last refreshed '+fmtDate(mem2LoadedAt)+' · '+ALL_MEMBERSHIPS2.length.toLocaleString()+' membership row(s)' : 'Loading membership data…';
+}
+
+// Called from the Reconciliation tab's renderAll() with the SAME raw
+// stMemRows it just fetched for the Membership Reconciliation view — see
+// the comment block at the top of this script for why this tab has no
+// independent fetch of its own on initial load.
+function refreshMembershipsTabAfterReconLoad(stMemRows){
+  ALL_MEMBERSHIPS2=buildMembershipsTabRows(stMemRows||[]);
+  mem2DataReady=true; mem2LoadedAt=new Date();
+  renderMem2Tab();
+}
+
+// Manual "↻ Refresh" button only — reuses REPORT_KEY_ST_MEMBERSHIP's
+// existing cache slot (same blob db1's Membership Reconciliation view
+// reads) instead of adding a second cache key for identical data.
+async function loadAndInitMemberships(){
+  const finfo=document.getElementById('mem2-finfo');
+  try{
+    if(finfo) finfo.textContent='Refreshing…';
+    const rows=await fetchSTMembershipBlob();
+    setCache(REPORT_KEY_ST_MEMBERSHIP, rows);
+    ALL_MEMBERSHIPS2=buildMembershipsTabRows(rows);
+    mem2DataReady=true; mem2LoadedAt=new Date();
+    renderMem2Tab();
+  }catch(e){
+    console.warn('[Memberships tab] Refresh failed:',e);
+    if(finfo) finfo.textContent='⚠ Refresh failed: '+e.message.slice(0,80);
+  }
+}
 </script>
 
 </body>
