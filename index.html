@@ -1125,6 +1125,27 @@ td.mkt-placeholder-cell{color:var(--gray-500)}
 <div class="db-panel" id="db5">
 <div class="fbar">
   <label>Accounts Receivable</label>
+
+  <label>Aging Bucket</label>
+  <select class="compare-sel" id="arAgingSel" onchange="onARAgingFilterChange(this.value)">
+    <option value="all">All Buckets</option>
+    <option value="Current (0-30 Days)">Current (0-30 Days)</option>
+    <option value="31-60 Days">31-60 Days</option>
+    <option value="61-90 Days">61-90 Days</option>
+    <option value="90+ Days">90+ Days</option>
+    <option value="Credit Balance">Credit Balance</option>
+  </select>
+
+  <label>Customer</label>
+  <div class="ms-wrap" id="arCustWrap">
+    <button class="ms-btn" id="arCustBtn" onclick="toggleMS('arCust',event)">All Customers ▾</button>
+    <div class="ms-panel" id="arCustPanel">
+      <input class="ms-search" type="text" placeholder="Search customers…" oninput="filterMSItems('arCust',this.value)">
+      <div class="ms-actions"><button onclick="selectAllMS('arCust')">Select All</button><button onclick="clearMS('arCust')">Clear</button></div>
+      <div id="arCustItems"></div>
+    </div>
+  </div>
+
   <button class="btn-reset" onclick="loadAndInitAR()">↻ Refresh</button>
   <span class="finfo" id="ar-finfo">Loading invoice data…</span>
 </div>
@@ -1168,14 +1189,9 @@ td.mkt-placeholder-cell{color:var(--gray-500)}
           <th onclick="sortAR('balance')" id="arth-balance">Open Balance</th>
           <th onclick="sortAR('amountPaid')" id="arth-amountPaid">Amount Paid</th>
           <th onclick="sortAR('subtotal')" id="arth-subtotal">Invoice Subtotal</th>
-          <th onclick="sortAR('lastPaidD8')" id="arth-lastPaidD8">Last Paid Date</th>
-          <th onclick="sortAR('status')" id="arth-status">ST Status</th>
           <th onclick="sortAR('bizUnit')" id="arth-bizUnit">Business Unit</th>
           <th onclick="sortAR('jobNumber')" id="arth-jobNumber">Job #</th>
-          <th>Open Job</th>
-          <th onclick="sortAR('jobType')" id="arth-jobType">Job Type</th>
-          <th onclick="sortAR('technician')" id="arth-technician">Technician</th>
-          <th onclick="sortAR('campaign')" id="arth-campaign">Campaign / Source</th>
+          <th>Open Invoice</th>
         </tr></thead>
         <tbody id="arDetailBody"></tbody>
       </table>
@@ -3271,6 +3287,10 @@ function renderJobCharts(){
 
 // ── TABLES ──
 function stJobLink(o){return o?`<a class="st-link" href="https://go.servicetitan.com/#/Job/Index/${encodeURIComponent(o)}" target="_blank" rel="noopener">↗ Open</a>`:'—';}
+// AR tab's "Open Invoice" link (added 2026-09-16, per Ariel): the invoice
+// isn't tied to a job for membership-only invoices, so this deep-links to
+// ServiceTitan's own invoice editor by Invoice Number instead of the job.
+function stInvoiceLink(o){return o?`<a class="st-link" href="https://go.servicetitan.com/#/EditInvoice/${encodeURIComponent(o)}" target="_blank" rel="noopener">↗ Open</a>`:'—';}
 function renderJobPagination(elId,total,page,onPage){
   const el=document.getElementById(elId);
   const pages=Math.max(1,Math.ceil(total/JOB_PAGE_SIZE));
@@ -5333,12 +5353,12 @@ document.addEventListener('DOMContentLoaded', loadAndInitMkt);
 const AR_CONFIG = {
   // Blob-scoped SAS token (sr=b), valid through 2030-09-13.
   sasUrl: "https://coolbreeze.blob.core.windows.net/coolbreeze/Invoices%20Service%20Titan.xlsx?sp=r&st=2026-09-12T17:18:32Z&se=2030-09-13T01:33:32Z&spr=https&sv=2026-02-06&sr=b&sig=qJ509t6hHituCL%2Bwsi1UukNDUhLu%2BqwtHdF%2F2BKLV%2FU%3D",
-  // No previous-years invoice export has been provided yet (mirrors how
-  // JOBS_CONFIG.sasUrlPrevYear started out blank) — fetchARPrevYearsBlob()
-  // below already no-ops gracefully while this stays unset. Wiring a prior-
-  // years feed in later (so a still-unpaid invoice from a prior year keeps
-  // showing up here) is just adding the URL here, same as the Jobs tab.
-  sasUrlPrevYears: null,
+  // Wired 2026-09-16: "Invoices Previous Year.xlsx", same file/column shape
+  // as the current-year export, non-overlapping by ServiceTitan's own
+  // report-period design (same assumption JOBS_CONFIG.sasUrlPrevYear
+  // already relies on for Jobs — no dedup between current/prev-year rows
+  // there either). Blob-scoped SAS token (sr=b), valid through 2030-09-16.
+  sasUrlPrevYears: "https://coolbreeze.blob.core.windows.net/coolbreeze/Invoices%20Previous%20Year.xlsx?sp=r&st=2026-09-16T11:57:27Z&se=2030-09-16T20:12:27Z&spr=https&sv=2026-02-06&sr=b&sig=qiEcHh8bJsx1KEdp0g9I8bWKHhgUmLLOar4SAXjiUmE%3D",
 };
 const REPORT_KEY_AR = 'invoicesServiceTitan';
 const REPORT_KEY_AR_PREV = 'invoicesServiceTitanPrevYears';
@@ -5350,6 +5370,7 @@ let arSortKey = 'd8', arSortDir = 1;
 let arPage = 1;
 let arSearchQuery = '';
 let arSearchTimer;
+let arAgingFilter = 'all';
 
 const AR_BUCKETS = ['Current (0-30 Days)','31-60 Days','61-90 Days','90+ Days','Credit Balance'];
 const AR_BUCKET_CLASS = {
@@ -5359,10 +5380,19 @@ const AR_BUCKET_CLASS = {
 const AR_SORT_TH = {
   invoiceNumber:'arth-invoiceNumber', customerName:'arth-customerName', d8:'arth-d8',
   daysOutstanding:'arth-daysOutstanding', agingBucket:'arth-agingBucket', balance:'arth-balance',
-  amountPaid:'arth-amountPaid', subtotal:'arth-subtotal', lastPaidD8:'arth-lastPaidD8',
-  status:'arth-status', bizUnit:'arth-bizUnit', jobNumber:'arth-jobNumber', jobType:'arth-jobType',
-  technician:'arth-technician', campaign:'arth-campaign',
+  amountPaid:'arth-amountPaid', subtotal:'arth-subtotal', bizUnit:'arth-bizUnit', jobNumber:'arth-jobNumber',
 };
+
+// Extend the generic multiselect system (MS_OPTS/MS_SEL/MS_LABEL/MS_APPLY,
+// built for the Jobs tab and already reused by Estimates/Marketing) with
+// the AR tab's own Customer filter, instead of a bespoke implementation.
+MS_OPTS.arCust=[]; MS_SEL.arCust=new Set(); MS_LABEL.arCust='All Customers';
+MS_APPLY.arCust=()=>{ arPage=1; renderARDetail(); };
+function buildARCustomerOptions(){
+  MS_OPTS.arCust=[...new Set(ALL_AR.map(r=>r.customerName).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  renderMSItems('arCust'); updateMSBtn('arCust');
+}
+function onARAgingFilterChange(v){ arAgingFilter=v; arPage=1; renderARDetail(); }
 
 async function fetchARBlob(){ return fetchBlobXLSX(AR_CONFIG.sasUrl); }
 async function fetchARPrevYearsBlob(){
@@ -5491,6 +5521,12 @@ function monthlyConstructionRevForYear(y){
 
 function currentARRows(){
   let list = ALL_AR.slice();
+  if(arAgingFilter && arAgingFilter!=='all'){
+    list = list.filter(r=>r.agingBucket===arAgingFilter);
+  }
+  if(MS_SEL.arCust.size>0){
+    list = list.filter(r=>MS_SEL.arCust.has(r.customerName));
+  }
   if(arSearchQuery){
     list = list.filter(r=>((r.invoiceNumber||'')+' '+(r.customerName||'')+' '+(r.jobNumber||'')+' '+(r.campaign||'')+' '+(r.technician||'')).toLowerCase().includes(arSearchQuery));
   }
@@ -5540,7 +5576,7 @@ function renderARAgingTable(){
 function renderARDetail(){
   const body=document.getElementById('arDetailBody');
   if(!body) return;
-  if(!arDataReady){ body.innerHTML='<tr><td colspan="16" class="mkt-placeholder">Loading…</td></tr>'; return; }
+  if(!arDataReady){ body.innerHTML='<tr><td colspan="11" class="mkt-placeholder">Loading…</td></tr>'; return; }
   const list=currentARRows();
   const cntEl=document.getElementById('ar-detail-count');
   if(cntEl) cntEl.textContent=list.length.toLocaleString()+' invoice(s)';
@@ -5548,7 +5584,7 @@ function renderARDetail(){
   const activeTh=document.getElementById(AR_SORT_TH[arSortKey]);
   if(activeTh) activeTh.classList.add(arSortDir===1?'sort-asc':'sort-desc');
   if(!list.length){
-    body.innerHTML='<tr><td colspan="16" style="text-align:center;color:var(--gray-500);padding:20px">No invoices match the current search.</td></tr>';
+    body.innerHTML='<tr><td colspan="11" style="text-align:center;color:var(--gray-500);padding:20px">No invoices match the current search.</td></tr>';
     renderJobPagination('arDetailPagination', 0, 1, 'goARPage');
     return;
   }
@@ -5565,19 +5601,15 @@ function renderARDetail(){
     <td class="td-val">${fmtFull(r.balance)}</td>
     <td class="td-val">${fmtFull(r.amountPaid)}</td>
     <td class="td-val">${fmtFull(r.subtotal)}</td>
-    <td style="white-space:nowrap">${r.lastPaidD8?fmtDate(new Date(r.lastPaidD8+'T00:00:00')):'—'}</td>
-    <td>${esc(r.status)||'—'}</td>
     <td>${esc(r.bizUnit)||'—'}</td>
     <td class="mono">${esc(r.jobNumber)||'—'}</td>
-    <td>${stJobLink(r.jobNumber)}</td>
-    <td>${esc(r.jobType)||'—'}</td>
-    <td>${esc(r.technician)||'—'}</td>
-    <td>${esc(r.campaign)||'—'}</td>
+    <td>${stInvoiceLink(r.invoiceNumber)}</td>
   </tr>`).join('');
   renderJobPagination('arDetailPagination', list.length, arPage, 'goARPage');
 }
 
 function renderARTab(){
+  buildARCustomerOptions();
   renderARKPIs();
   renderARAgingTable();
   renderARDetail();
@@ -5594,8 +5626,8 @@ function onARSearchInput(v){
 function exportARXLSX(){
   const rows=currentARRows();
   exportJobsXLSX('Coolbreeze_AccountsReceivable_'+todayISO()+'.xlsx',
-    ['Invoice #','Customer','Invoice Date','Days Outstanding','Aging Bucket','Open Balance','Amount Paid','Invoice Subtotal','Last Paid Date','ST Status','Business Unit','Job #','Job Type','Technician','Campaign / Source'],
-    rows.map(r=>[r.invoiceNumber, r.customerName, r.d8?fmtDate(new Date(r.d8+'T00:00:00')):'—', r.daysOutstanding==null?'':r.daysOutstanding, r.agingBucket, r.balance, r.amountPaid, r.subtotal, r.lastPaidD8?fmtDate(new Date(r.lastPaidD8+'T00:00:00')):'—', r.status, r.bizUnit, r.jobNumber, r.jobType, r.technician, r.campaign]));
+    ['Invoice #','Customer','Invoice Date','Days Outstanding','Aging Bucket','Open Balance','Amount Paid','Invoice Subtotal','Business Unit','Job #'],
+    rows.map(r=>[r.invoiceNumber, r.customerName, r.d8?fmtDate(new Date(r.d8+'T00:00:00')):'—', r.daysOutstanding==null?'':r.daysOutstanding, r.agingBucket, r.balance, r.amountPaid, r.subtotal, r.bizUnit, r.jobNumber]));
 }
 
 async function loadAndInitAR(){
@@ -5638,7 +5670,7 @@ async function loadAndInitAR(){
     arDataReady=true;
     if(finfo) finfo.textContent='⚠ Failed to load: '+e.message;
     const body=document.getElementById('arDetailBody');
-    if(body) body.innerHTML=`<tr><td colspan="16" style="text-align:center;color:var(--gray-500);padding:20px">Couldn't load the invoice feed: ${esc(e.message||e)}</td></tr>`;
+    if(body) body.innerHTML=`<tr><td colspan="11" style="text-align:center;color:var(--gray-500);padding:20px">Couldn't load the invoice feed: ${esc(e.message||e)}</td></tr>`;
   }
 }
 
