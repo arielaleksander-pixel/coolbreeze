@@ -564,8 +564,8 @@ td.mkt-placeholder-cell{color:var(--gray-500)}
     <div class="kpi gold"><div class="kpi-ico">💰</div><div class="kpi-lbl">Total Revenue <span class="tip-ic" data-tip="Service: sum of Jobs Subtotal across the filtered completed jobs. Construction: Invoice line items posted to the Job Income:Construction Job GL account on invoices with no Job Number (progressive-billing invoices), whose Invoice Date falls in the selected date range. Construction revenue isn't tied to a job, so the Business Unit/Technician/Job Type/Category filters don't apply to it.">ⓘ</span></div><div class="kpi-val" id="jk-rev">—</div><div class="kpi-sub" id="jk-rev-sub">Job revenue</div><div class="kpi-delta" id="jkd-rev"></div></div>
     <div class="kpi"><div class="kpi-ico">👷</div><div class="kpi-lbl">Labor Cost <span class="tip-ic" data-tip="Total Labor Costs ÷ Total Revenue for the filtered completed jobs.">ⓘ</span></div><div class="kpi-val" id="jk-labor">—</div><div class="kpi-sub" id="jk-labor-sub">Labor</div><div class="kpi-delta" id="jkd-labor"></div></div>
     <div class="kpi"><div class="kpi-ico">📦</div><div class="kpi-lbl">Material Cost <span class="tip-ic" data-tip="Materials + Equipment + PO/Bill Costs ÷ Total Revenue for the filtered completed jobs.">ⓘ</span></div><div class="kpi-val" id="jk-matl">—</div><div class="kpi-sub" id="jk-matl-sub">Materials</div><div class="kpi-delta" id="jkd-matl"></div></div>
-    <div class="kpi green"><div class="kpi-ico">📈</div><div class="kpi-lbl">Gross Margin <span class="tip-ic" data-tip="Sum of Jobs Gross Margin (Revenue minus job costs) across the filtered completed jobs.">ⓘ</span></div><div class="kpi-val" id="jk-gm">—</div><div class="kpi-sub">Revenue − costs</div><div class="kpi-delta" id="jkd-gm"></div></div>
-    <div class="kpi green"><div class="kpi-ico">%</div><div class="kpi-lbl">Gross Margin % <span class="tip-ic" data-tip="Total Gross Margin ÷ Total Revenue for the filtered completed jobs (not an average of each job's own margin %).">ⓘ</span></div><div class="kpi-val" id="jk-gmpct">—</div><div class="kpi-sub">Margin / revenue</div><div class="kpi-delta" id="jkd-gmpct"></div></div>
+    <div class="kpi green"><div class="kpi-ico">📈</div><div class="kpi-lbl">Gross Margin <span class="tip-ic" data-tip="Service: Revenue minus job costs (labor/materials/equipment/PO+Bill costs) across the filtered completed jobs. Construction: job-less progressive-billing invoices have no linked job costs in ServiceTitan, so 100% of Construction revenue is counted as margin dollars.">ⓘ</span></div><div class="kpi-val" id="jk-gm">—</div><div class="kpi-sub" id="jk-gm-sub">Revenue − costs</div><div class="kpi-delta" id="jkd-gm"></div></div>
+    <div class="kpi green"><div class="kpi-ico">%</div><div class="kpi-lbl">Gross Margin % <span class="tip-ic" data-tip="Total Gross Margin (including Construction, treated as 100% margin) ÷ Total Revenue (Service + Construction) for the filtered completed jobs — not an average of each job's own margin %.">ⓘ</span></div><div class="kpi-val" id="jk-gmpct">—</div><div class="kpi-sub">Margin / revenue</div><div class="kpi-delta" id="jkd-gmpct"></div></div>
     <div class="kpi"><div class="kpi-ico">📊</div><div class="kpi-lbl">Avg Job Value <span class="tip-ic" data-tip="Total Revenue ÷ Total Jobs for the filtered completed jobs.">ⓘ</span></div><div class="kpi-val" id="jk-avg">—</div><div class="kpi-sub">Revenue per job</div><div class="kpi-delta" id="jkd-avg"></div></div>
   </div>
 
@@ -3089,11 +3089,19 @@ function renderJobKPIs(){
   const constrAmt=(typeof constructionRevForRange==='function')?constructionRevForRange(from,to):0;
   const labor=jobFiltered.reduce((s,j)=>s+j.labor,0);
   const matl=jobFiltered.reduce((s,j)=>s+j.matl,0);
-  const gm=jobFiltered.reduce((s,j)=>s+j.gm,0);
-  const gmPct=rev>0?gm/rev*100:0;
+  const gmService=jobFiltered.reduce((s,j)=>s+j.gm,0);
+  // Per Ariel (2026-09-16): Gross Margin now includes Construction revenue.
+  // Construction is job-less progressive-billing invoice revenue with no
+  // linked job costs in ServiceTitan, so there's no cost figure to net
+  // against it — by her explicit choice, 100% of Construction revenue is
+  // treated as margin dollars (added to both the numerator and, via
+  // constrAmt in totalRev below, the denominator).
+  const gm=gmService+constrAmt;
+  const totalRev=rev+constrAmt;
+  const gmPct=totalRev>0?gm/totalRev*100:0;
   const avg=n>0?rev/n:0;
   document.getElementById('jk-total').textContent=n.toLocaleString();
-  document.getElementById('jk-rev').textContent=fmtM(rev+constrAmt);
+  document.getElementById('jk-rev').textContent=fmtM(totalRev);
   const revSubEl=document.getElementById('jk-rev-sub');
   if(revSubEl) revSubEl.textContent=constrAmt>0?('Service '+fmtM(rev)+' + Construction '+fmtM(constrAmt)):'Job revenue';
   const laborPct=rev>0?labor/rev*100:0,matlPct=rev>0?matl/rev*100:0;
@@ -3102,7 +3110,9 @@ function renderJobKPIs(){
   document.getElementById('jk-matl').textContent=rev>0?matlPct.toFixed(1)+'%':'—';
   document.getElementById('jk-matl-sub').textContent=fmtM(matl);
   document.getElementById('jk-gm').textContent=fmtM(gm);
-  document.getElementById('jk-gmpct').textContent=rev>0?gmPct.toFixed(1)+'%':'—';
+  const gmSubEl=document.getElementById('jk-gm-sub');
+  if(gmSubEl) gmSubEl.textContent=constrAmt>0?('Service '+fmtM(gmService)+' + Construction '+fmtM(constrAmt)):'Revenue − costs';
+  document.getElementById('jk-gmpct').textContent=totalRev>0?gmPct.toFixed(1)+'%':'—';
   document.getElementById('jk-avg').textContent=fmtM(avg);
 
   const np=jobProgress.length;
@@ -3127,12 +3137,17 @@ function renderJobKPIs(){
       return true;
     };
     const prevCompleted=ALL_JOBS.filter(j=>isCompletedJob(j.status)&&j.d8&&j.d8>=cmp.from&&j.d8<=cmp.to&&matchCommon(j));
-    const pn=prevCompleted.length,prevRev=prevCompleted.reduce((s,j)=>s+j.rev,0),prevGm=prevCompleted.reduce((s,j)=>s+j.gm,0);
+    const pn=prevCompleted.length,prevRev=prevCompleted.reduce((s,j)=>s+j.rev,0),prevGmService=prevCompleted.reduce((s,j)=>s+j.gm,0);
     const prevLabor=prevCompleted.reduce((s,j)=>s+j.labor,0),prevMatl=prevCompleted.reduce((s,j)=>s+j.matl,0);
-    const prevGmPct=prevRev>0?prevGm/prevRev*100:0,prevAvg=pn>0?prevRev/pn:0;
+    const prevAvg=pn>0?prevRev/pn:0;
     const prevConstrAmt=(typeof constructionRevForRange==='function')?constructionRevForRange(cmp.from,cmp.to):0;
+    // Same construction-as-100%-margin treatment as the current period, so
+    // the delta pill compares like with like.
+    const prevGm=prevGmService+prevConstrAmt;
+    const prevTotalRev=prevRev+prevConstrAmt;
+    const prevGmPct=prevTotalRev>0?prevGm/prevTotalRev*100:0;
     document.getElementById('jkd-total').innerHTML=jobFmtDelta(n,pn,pn.toString());
-    document.getElementById('jkd-rev').innerHTML=jobFmtDelta(rev+constrAmt,prevRev+prevConstrAmt,fmtM(prevRev+prevConstrAmt));
+    document.getElementById('jkd-rev').innerHTML=jobFmtDelta(totalRev,prevTotalRev,fmtM(prevTotalRev));
     const prevLaborPct=prevRev>0?prevLabor/prevRev*100:0,prevMatlPct=prevRev>0?prevMatl/prevRev*100:0;
     document.getElementById('jkd-labor').innerHTML=jobFmtDeltaPts(laborPct,prevLaborPct,prevLaborPct.toFixed(1)+'%');
     document.getElementById('jkd-matl').innerHTML=jobFmtDeltaPts(matlPct,prevMatlPct,prevMatlPct.toFixed(1)+'%');
