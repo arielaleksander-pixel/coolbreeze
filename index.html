@@ -19,6 +19,12 @@
       add a matching <button class="sidebar-item"> in the sidebar calling
       showDB(n), and add the panel's init/apply/render functions — same
       pattern Sunline uses for its 7 tabs (Jobs, Job Costing, Payroll, etc).
+    - UPDATE 2026-09-12: the QuickBooks Bills report and Vendor Invoice
+      Coverage's Purchase Orders data have both since moved off GAS_URL onto
+      direct Azure Blob fetches (QB_BILLS_CONFIG / PO_CONFIG, same pattern
+      as the Jobs/Estimates tabs below) — see fetchQBBillsBlob() and
+      fetchVendorTxnsBlob(). GAS_URL is still used for servicetitanBills and
+      the two Membership Balance reports.
 
   ── THINGS TO CONFIRM / ADJUST BEFORE GOING LIVE ──
   1) REPORT KEYS (below, in CONFIG): this file calls
@@ -214,6 +220,11 @@ tbody td{padding:9px 12px;color:var(--gray-700);vertical-align:middle}
 .status-pill.scheduled{background:rgba(37,99,235,.12);color:var(--blue)}
 .status-pill.hold{background:rgba(224,138,30,.14);color:var(--amber)}
 .status-pill.inprogress{background:rgba(196,85,29,.14);color:var(--orange)}
+.status-pill.ar-current{background:rgba(15,165,114,.14);color:var(--green)}
+.status-pill.ar-3060{background:rgba(224,138,30,.14);color:var(--amber)}
+.status-pill.ar-6090{background:rgba(196,85,29,.14);color:var(--orange)}
+.status-pill.ar-90plus{background:rgba(220,38,38,.14);color:var(--red)}
+.status-pill.ar-credit{background:rgba(37,99,235,.12);color:var(--blue)}
 .kpi-delta{font-size:11px;font-weight:700;margin-top:6px}
 .kpi-delta.up{color:var(--green)} .kpi-delta.down{color:var(--red)}
 
@@ -224,6 +235,16 @@ tbody td{padding:9px 12px;color:var(--gray-700);vertical-align:middle}
 .seg-btn.active{background:#fff;color:var(--blue);box-shadow:0 1px 3px rgba(10,37,64,.15)}
 .panel-head-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px}
 .kpi.warn{border-color:var(--amber)} .kpi.warn::after{background:rgba(224,138,30,.08)}
+
+/* ── MARKETING TAB (added) ── */
+.kpi-compact{padding:14px 16px}
+.kpi-compact .kpi-lbl{font-size:9.5px}
+.kpi-compact .kpi-val{font-size:21px;margin:5px 0 2px}
+.kpi-compact .kpi-ico{font-size:18px;top:13px;right:15px}
+.kpi.pending{opacity:.55}
+.kpi.pending .kpi-val{color:var(--gray-500)}
+.mkt-placeholder{padding:34px 10px;text-align:center;color:var(--gray-500);font-size:12px;font-style:italic}
+td.mkt-placeholder-cell{color:var(--gray-500)}
 </style>
 </head>
 <body>
@@ -263,11 +284,7 @@ tbody td{padding:9px 12px;color:var(--gray-700);vertical-align:middle}
      block below, give it a new id (db2, db3…), add a matching
      <button class="sidebar-item" onclick="showDB(2)"> here, and register its
      init/apply/render functions the way showDB() already dispatches for db1. -->
-<nav class="sidebar" id="sidebar">
-  <button class="sidebar-item active" id="nav-db1" onclick="showDB(1)" title="Accounting Reconciliation">
-    <span class="sidebar-icon">🧾</span>
-    <span class="sidebar-label">Reconciliation</span>
-  </button>
+<nav class="sidebar expanded" id="sidebar">
   <button class="sidebar-item" id="nav-db2" onclick="showDB(2)" title="Jobs Performance">
     <span class="sidebar-icon">🔧</span>
     <span class="sidebar-label">Jobs</span>
@@ -275,6 +292,18 @@ tbody td{padding:9px 12px;color:var(--gray-700);vertical-align:middle}
   <button class="sidebar-item" id="nav-db3" onclick="showDB(3)" title="Estimates Pipeline">
     <span class="sidebar-icon">📋</span>
     <span class="sidebar-label">Estimates</span>
+  </button>
+  <button class="sidebar-item" id="nav-db4" onclick="showDB(4)" title="Marketing">
+    <span class="sidebar-icon">📣</span>
+    <span class="sidebar-label">Marketing</span>
+  </button>
+  <button class="sidebar-item" id="nav-db5" onclick="showDB(5)" title="Accounts Receivable">
+    <span class="sidebar-icon">💵</span>
+    <span class="sidebar-label">Accounts Receivable</span>
+  </button>
+  <button class="sidebar-item active" id="nav-db1" onclick="showDB(1)" title="Accounting Reconciliation">
+    <span class="sidebar-icon">🧾</span>
+    <span class="sidebar-label">Reconciliation</span>
   </button>
   <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" title="Expand/Collapse">⇆</button>
 </nav>
@@ -382,9 +411,9 @@ tbody td{padding:9px 12px;color:var(--gray-700);vertical-align:middle}
 
   <div class="tcard">
     <div class="thead-row">
-      <div class="tcard-title">Vendor Invoice Coverage <span class="tip-ic" data-tip="Every invoice/PO from the Vendor Transactions source-of-truth sheet, checked against whether a matching Bill/Ref # was found in the QuickBooks and ServiceTitan bill reports.">ⓘ</span></div>
+      <div class="tcard-title">Vendor Invoice Coverage <span class="tip-ic" data-tip="Every purchase-order transaction from ServiceTitan's own Purchase Order Reconciliation export (fetched directly from Azure Blob), checked against whether a matching Bill/Ref # was found in the QuickBooks and ServiceTitan bill reports.">ⓘ</span></div>
       <div class="thead-right">
-        <input class="search-box" type="text" id="vcSearchBox" placeholder="Search vendor, invoice #, or PO #…" oninput="applyVendorCoverage()">
+        <input class="search-box" type="text" id="vcSearchBox" placeholder="Search vendor or transaction #…" oninput="applyVendorCoverage()">
         <select class="tbl-sel" id="vcStatusSel" onchange="applyVendorCoverage()">
           <option value="all">All</option>
           <option value="missing_qb">Missing from QuickBooks</option>
@@ -393,15 +422,13 @@ tbody td{padding:9px 12px;color:var(--gray-700);vertical-align:middle}
           <option value="in_both">In Both</option>
         </select>
         <span class="tcnt" id="vcCount">— records</span>
-        <a class="btn-export" href="https://docs.google.com/spreadsheets/d/1xUjXj61a7EW9pE0foIdQ-_Sq-e3DTUdEaAFKJzfFf88/edit?usp=sharing" target="_blank" rel="noopener noreferrer" style="text-decoration:none;display:inline-flex;align-items:center">📄 Open Source Sheet</a>
       </div>
     </div>
     <div class="tbl-wrap">
       <table>
         <thead><tr>
           <th>Vendor</th>
-          <th>Invoice #</th>
-          <th>PO #</th>
+          <th>Transaction #</th>
           <th>Amount</th>
           <th>Date</th>
           <th>In QuickBooks</th>
@@ -530,7 +557,7 @@ tbody td{padding:9px 12px;color:var(--gray-700);vertical-align:middle}
   <div class="section-lbl">✅ Completed</div>
   <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:12px;margin-bottom:18px">
     <div class="kpi"><div class="kpi-ico">🔧</div><div class="kpi-lbl">Total Jobs <span class="tip-ic" data-tip="Count of jobs with a Completion Date in the selected date range, Business Unit, Technician, Job Type, and Campaign Category filters.">ⓘ</span></div><div class="kpi-val" id="jk-total">—</div><div class="kpi-sub">Completed jobs</div><div class="kpi-delta" id="jkd-total"></div></div>
-    <div class="kpi gold"><div class="kpi-ico">💰</div><div class="kpi-lbl">Total Revenue <span class="tip-ic" data-tip="Sum of Jobs Subtotal across the filtered completed jobs.">ⓘ</span></div><div class="kpi-val" id="jk-rev">—</div><div class="kpi-sub">Job revenue</div><div class="kpi-delta" id="jkd-rev"></div></div>
+    <div class="kpi gold"><div class="kpi-ico">💰</div><div class="kpi-lbl">Total Revenue <span class="tip-ic" data-tip="Service: sum of Jobs Subtotal across the filtered completed jobs. Construction: Invoice line items posted to the Job Income:Construction Job GL account on invoices with no Job Number (progressive-billing invoices), whose Invoice Date falls in the selected date range. Construction revenue isn't tied to a job, so the Business Unit/Technician/Job Type/Category filters don't apply to it.">ⓘ</span></div><div class="kpi-val" id="jk-rev">—</div><div class="kpi-sub" id="jk-rev-sub">Job revenue</div><div class="kpi-delta" id="jkd-rev"></div></div>
     <div class="kpi"><div class="kpi-ico">👷</div><div class="kpi-lbl">Labor Cost <span class="tip-ic" data-tip="Total Labor Costs ÷ Total Revenue for the filtered completed jobs.">ⓘ</span></div><div class="kpi-val" id="jk-labor">—</div><div class="kpi-sub" id="jk-labor-sub">Labor</div><div class="kpi-delta" id="jkd-labor"></div></div>
     <div class="kpi"><div class="kpi-ico">📦</div><div class="kpi-lbl">Material Cost <span class="tip-ic" data-tip="Materials + Equipment + PO/Bill Costs ÷ Total Revenue for the filtered completed jobs.">ⓘ</span></div><div class="kpi-val" id="jk-matl">—</div><div class="kpi-sub" id="jk-matl-sub">Materials</div><div class="kpi-delta" id="jkd-matl"></div></div>
     <div class="kpi green"><div class="kpi-ico">📈</div><div class="kpi-lbl">Gross Margin <span class="tip-ic" data-tip="Sum of Jobs Gross Margin (Revenue minus job costs) across the filtered completed jobs.">ⓘ</span></div><div class="kpi-val" id="jk-gm">—</div><div class="kpi-sub">Revenue − costs</div><div class="kpi-delta" id="jkd-gm"></div></div>
@@ -552,7 +579,7 @@ tbody td{padding:9px 12px;color:var(--gray-700);vertical-align:middle}
   </div>
 
   <div class="row2">
-    <div class="card"><div class="ct">Revenue Over Time ($K) <span class="tip-ic" data-tip="Always shows the full calendar year selected on the right — independent of the filters above. Defaults to the current year, Jan through this month (year-to-date). Hover a bar to see the same month last year and the YoY % change.">ⓘ</span><select id="jobRevYearSel" onchange="renderJobCharts()" class="chart-yr-sel" style="margin-left:auto"></select></div><div class="chart-wrap" style="height:250px"><canvas id="jobRevChart"></canvas></div></div>
+    <div class="card"><div class="ct">Revenue Over Time ($K) <span class="tip-ic" data-tip="Always shows the full calendar year selected on the right — independent of the filters above. Service = job-based revenue (Jobs Subtotal); Construction = progressive-billing invoices with no Job Number, posted to the Job Income:Construction Job GL account. Defaults to the current year, Jan through this month (year-to-date). Hover a bar segment to see that series' same month last year and the YoY % change.">ⓘ</span><select id="jobRevYearSel" onchange="renderJobCharts()" class="chart-yr-sel" style="margin-left:auto"></select></div><div class="chart-wrap" style="height:250px"><canvas id="jobRevChart"></canvas></div></div>
     <div class="card"><div class="ct">Jobs by Business Unit</div><div class="chart-wrap" style="height:250px"><canvas id="jobBuChart"></canvas></div></div>
   </div>
   <div class="row2b" style="margin-bottom:20px">
@@ -766,6 +793,394 @@ tbody td{padding:9px 12px;color:var(--gray-700);vertical-align:middle}
 </div>
 </div><!-- /db3 -->
 
+<!-- ══════════════════════════════════════════ -->
+<!-- DASHBOARD 4: MARKETING                      -->
+<!-- Mirrors the Best Plumber "Marketing" tab's structure/shell. Per Ariel
+     (2026-09-12): "let's mirror the marketing tab from best plumber, I'll
+     start with the calls report and will send bookings and manual jobs
+     later" — build the full shell now, wire only what the Calls Service
+     Titan export can support live, and render everything that needs
+     Bookings/Manual Jobs/Spend/GMB as "—" / "Awaiting data source" (same
+     convention Best Plumber's own Marketing tab already uses for its own
+     not-yet-connected pieces). The Google PPC Analysis page is skipped
+     entirely for now — it has zero Calls involvement. When Bookings/Manual
+     Jobs arrive, extend MKT_CONFIG + parseCallsRows' sibling parsers and
+     wire the pending KPIs/charts/table columns the same way Best Plumber's
+     did, source by source. -->
+<div class="db-panel" id="db4">
+<div class="fbar">
+  <label>Page</label>
+  <select class="compare-sel" id="mktPageSel" onchange="switchMktPage(this.value)">
+    <option value="overview">🏠 Overview</option>
+    <option value="calls">📞 Call Analysis</option>
+  </select>
+  <div style="width:1px;height:20px;background:rgba(255,255,255,.15);margin:0 6px"></div>
+
+  <label>From</label>
+  <input type="date" id="mktDateFrom" class="date-inp" onchange="applyMktFilters()">
+  <span class="fsep">&rarr;</span>
+  <label>To</label>
+  <input type="date" id="mktDateTo" class="date-inp" onchange="applyMktFilters()">
+
+  <label>Campaign Category</label>
+  <div class="ms-wrap" id="mktCatWrap">
+    <button class="ms-btn" id="mktCatBtn" onclick="toggleMS('mktCat',event)">All Categories ▾</button>
+    <div class="ms-panel" id="mktCatPanel">
+      <input class="ms-search" type="text" placeholder="Search categories…" oninput="filterMSItems('mktCat',this.value)">
+      <div class="ms-actions"><button onclick="selectAllMS('mktCat')">Select All</button><button onclick="clearMS('mktCat')">Clear</button></div>
+      <div id="mktCatItems"></div>
+    </div>
+  </div>
+
+  <label>Business Unit</label>
+  <div class="ms-wrap" id="mktBizWrap">
+    <button class="ms-btn" id="mktBizBtn" onclick="toggleMS('mktBiz',event)">All Business Units ▾</button>
+    <div class="ms-panel" id="mktBizPanel">
+      <input class="ms-search" type="text" placeholder="Search business units…" oninput="filterMSItems('mktBiz',this.value)">
+      <div class="ms-actions"><button onclick="selectAllMS('mktBiz')">Select All</button><button onclick="clearMS('mktBiz')">Clear</button></div>
+      <div id="mktBizItems"></div>
+    </div>
+  </div>
+
+  <label>Call Type</label>
+  <div class="ms-wrap" id="mktCallTypeWrap">
+    <button class="ms-btn" id="mktCallTypeBtn" onclick="toggleMS('mktCallType',event)">All Call Types ▾</button>
+    <div class="ms-panel" id="mktCallTypePanel">
+      <input class="ms-search" type="text" placeholder="Search call types…" oninput="filterMSItems('mktCallType',this.value)">
+      <div class="ms-actions"><button onclick="selectAllMS('mktCallType')">Select All</button><button onclick="clearMS('mktCallType')">Clear</button></div>
+      <div id="mktCallTypeItems"></div>
+    </div>
+  </div>
+
+  <label>Lead <span class="tip-ic" data-tip="Filters the Call Analysis page only (KPIs, charts, and the Calls Audit table/export) to calls with Lead = TRUE or Lead = FALSE. The rest of the Marketing tab is unaffected.">ⓘ</span></label>
+  <select class="compare-sel" id="mktCallsLeadSel" onchange="applyMktFilters()">
+    <option value="all">All Calls</option>
+    <option value="lead">Lead Calls Only</option>
+    <option value="notlead">Non-Lead Calls Only</option>
+  </select>
+
+  <label>Excused <span class="tip-ic" data-tip="Filters the Call Analysis page only (KPIs, charts, and the Calls Audit table/export) to calls with Call Type = Excused, or to every other call type. The rest of the Marketing tab is unaffected.">ⓘ</span></label>
+  <select class="compare-sel" id="mktCallsExcusedSel" onchange="applyMktFilters()">
+    <option value="all">All Calls</option>
+    <option value="excused">Excused Only</option>
+    <option value="notexcused">Not Excused Only</option>
+  </select>
+
+  <label>Reason <span class="tip-ic" data-tip="Filters the Call Analysis page only (KPIs, charts, and the Calls Audit table/export) to calls whose Call Reason matches one of the checked values (checking none = no filter; blank Call Reason is bucketed as “Not specified”). The rest of the Marketing tab is unaffected.">ⓘ</span></label>
+  <div class="ms-wrap" id="mktReasonWrap">
+    <button class="ms-btn" id="mktReasonBtn" onclick="toggleMS('mktReason',event)">All Reasons ▾</button>
+    <div class="ms-panel" id="mktReasonPanel">
+      <input class="ms-search" type="text" placeholder="Search reasons…" oninput="filterMSItems('mktReason',this.value)">
+      <div class="ms-actions"><button onclick="selectAllMS('mktReason')">Select All</button><button onclick="clearMS('mktReason')">Clear</button></div>
+      <div id="mktReasonItems"></div>
+    </div>
+  </div>
+
+  <label>Hours <span class="tip-ic" data-tip="Filters the Call Analysis page only (KPIs, charts, and the Calls Audit table/export) to Business Hours (8am–4:59pm) or After Hours calls (weekend calls are always After Hours). The rest of the Marketing tab is unaffected.">ⓘ</span></label>
+  <select class="compare-sel" id="mktHoursSel" onchange="applyMktFilters()">
+    <option value="all">All Hours</option>
+    <option value="biz">Business Hours</option>
+    <option value="after">After Hours</option>
+  </select>
+
+  <button class="btn-reset" onclick="resetMktFilters()">Reset</button>
+  <span class="finfo" id="mkt-finfo">Loading marketing data…</span>
+</div>
+
+<div class="main" id="mktPage-overview">
+  <div class="section-lbl">📊 Snapshot — Selected Date Range</div>
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:12px;margin-bottom:14px">
+    <div class="kpi pending"><div class="kpi-ico">💰</div><div class="kpi-lbl">Marketing Spend</div><div class="kpi-val" id="mk-spend">—</div><div class="kpi-sub">Awaiting data source</div></div>
+    <div class="kpi"><div class="kpi-ico">🧲</div><div class="kpi-lbl">Total Leads <span class="tip-ic" data-tip="Lead Calls + Web Bookings + Manual Calls (Jobs with no Call Campaign attribution). Live across all three sources.">ⓘ</span></div><div class="kpi-val" id="mk-leads">—</div></div>
+    <div class="kpi"><div class="kpi-ico">🚫</div><div class="kpi-lbl">Unqualified Leads <span class="tip-ic" data-tip="Calls where Lead = FALSE and Call Type = Excused. Live from the Calls export.">ⓘ</span></div><div class="kpi-val" id="mk-unqual">—</div></div>
+    <div class="kpi"><div class="kpi-ico">🎯</div><div class="kpi-lbl">Total Opportunities <span class="tip-ic" data-tip="Total Leads minus Unbooked minus Cancellations. Live across Calls, Web Bookings and Manual Calls.">ⓘ</span></div><div class="kpi-val" id="mk-opps">—</div></div>
+    <div class="kpi"><div class="kpi-ico">📞</div><div class="kpi-lbl">Lead Calls <span class="tip-ic" data-tip="Calls flagged Lead = TRUE in the Calls export. Live.">ⓘ</span></div><div class="kpi-val" id="mk-calls">—</div></div>
+    <div class="kpi"><div class="kpi-ico">🖥</div><div class="kpi-lbl">Web Forms <span class="tip-ic" data-tip="Web Booking form submissions that were genuine leads (Status not Dismissed for a junk reason like Spam/Wrong Number/Test). Live from the Web Booking export.">ⓘ</span></div><div class="kpi-val" id="mk-webforms">—</div></div>
+    <div class="kpi"><div class="kpi-ico">☎️</div><div class="kpi-lbl">Manual Calls <span class="tip-ic" data-tip="Jobs with no Call Campaign attribution, excluding Business Unit = Construction and Job Type = z No Job — leads that came in without being tracked to a call or web form. Live from the Jobs workbook.">ⓘ</span></div><div class="kpi-val" id="mk-manualcalls">—</div></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px">
+    <div class="kpi pending"><div class="kpi-ico">✖</div><div class="kpi-lbl">Cancellations</div><div class="kpi-val" id="mk-cancel">—</div><div class="kpi-sub">Awaiting data source</div></div>
+    <div class="kpi pending"><div class="kpi-ico">💸</div><div class="kpi-lbl">Lost Ad $ (Canceled)</div><div class="kpi-val" id="mk-cancelspend">—</div><div class="kpi-sub">Awaiting data source</div></div>
+    <div class="kpi pending" style="border-left:4px solid var(--orange)"><div class="kpi-ico">⏱</div><div class="kpi-lbl">Lost Due to Capacity</div><div class="kpi-val" id="mk-capacity">—</div><div class="kpi-sub">Awaiting data source</div></div>
+    <div class="kpi" style="border-left:4px solid var(--orange)"><div class="kpi-ico">📵</div><div class="kpi-lbl">Unbooked <span class="tip-ic" data-tip="Calls with Call Type = Unbooked, plus Web Booking submissions with Status = Dismissed for a genuine (non-junk) reason. Live across Calls and Web Bookings.">ⓘ</span></div><div class="kpi-val" id="mk-unbooked">—</div></div>
+    <div class="kpi pending"><div class="kpi-ico">💸</div><div class="kpi-lbl">Lost Ad $ (Unbooked)</div><div class="kpi-val" id="mk-unbookedspend">—</div><div class="kpi-sub">Awaiting data source</div></div>
+  </div>
+
+  <div style="margin-bottom:20px">
+    <div class="card"><div class="ct">Number of Leads by Date and Call Status <span class="tip-ic" data-tip="Every day in the selected range, stacked as Canceled / Opportunity / Unbooked — the same three buckets as the Total Opportunities KPI, summed across Calls, Web Bookings and Manual Calls.">ⓘ</span></div><div class="chart-wrap" style="height:260px"><canvas id="mktLeadsByDateChart"></canvas></div></div>
+  </div>
+
+  <div class="card" style="margin-bottom:20px">
+    <div class="ct">Calls-to-Sale Funnel <span class="tip-ic" data-tip="Needs the Estimates file and ad spend feeds in addition to Calls, Web Bookings and Manual Calls. Awaiting those data sources.">ⓘ</span></div>
+    <div class="mkt-placeholder">Awaiting data source — Calls-to-Sale Funnel needs Estimates and Spend to be connected</div>
+  </div>
+
+  <div class="tcard" style="margin-bottom:20px">
+    <div class="thead-row"><div class="tcard-title">Business Unit <span class="tip-ic" data-tip="Leads, Total Opportunities, Unbooked Count and Cancelled are live across Calls, Web Bookings and Manual Calls. Total Spend needs an ad-spend source and stays blank until connected.">ⓘ</span></div></div>
+    <div class="tbl-wrap">
+      <table><thead><tr><th>Business Unit</th><th>Leads</th><th>Total Opportunities</th><th>Unbooked Count</th><th>Cancelled</th><th>Total Spend</th></tr></thead>
+      <tbody id="mktBizUnitBody"></tbody></table>
+    </div>
+  </div>
+
+  <div class="tcard" id="mktRoiCard">
+    <div class="thead-row">
+      <div class="tcard-title">Marketing ROI by Category <span class="tip-ic" data-tip="Leads, Booked, Unbooked and Booking Rate are live across Calls, Web Bookings and Manual Calls, grouped by Campaign Category. Spend, Sales, Jobs Completed, Completed Revenue, ROI, Cost/Lead, Impressions and Clicks need Spend/Estimates sources and stay blank until connected.">ⓘ</span></div>
+      <div class="thead-right">
+        <span class="tcnt" id="mkt-roi-count">— categories</span>
+        <button class="btn-export" onclick="exportMktRoiXLSX()">⬇ Export Excel</button>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th>Category</th>
+        <th>Spend</th>
+        <th>Sales (Sold)</th>
+        <th>Jobs Completed</th>
+        <th>Completed Revenue</th>
+        <th>ROI (X)</th>
+        <th>ROI %</th>
+        <th>Leads</th>
+        <th>Booked</th>
+        <th>Unbooked</th>
+        <th>Booking Rate</th>
+        <th>Cost / Lead</th>
+        <th>Impressions</th>
+        <th>Clicks</th>
+      </tr></thead>
+      <tbody id="mktRoiBody"></tbody>
+      <tfoot id="mktRoiFoot"></tfoot>
+      </table>
+    </div>
+  </div>
+
+  <div style="margin-bottom:20px">
+    <div class="card"><div class="ct">Daily Spend per Channel <span class="tip-ic" data-tip="Needs an ad-spend data source (Google Ads, Angi, Yelp, etc). Awaiting connection.">ⓘ</span></div><div class="chart-wrap" style="height:250px"><canvas id="mktSpendChart"></canvas></div></div>
+  </div>
+
+  <div style="margin-bottom:20px">
+    <div class="card"><div class="ct">Daily Leads per Channel <span class="tip-ic" data-tip="Live across Calls, Web Bookings and Manual Calls, stacked daily by Campaign Category.">ⓘ</span></div><div class="chart-wrap" style="height:250px"><canvas id="mktLeadsChannelChart"></canvas></div></div>
+  </div>
+
+  <div style="margin-bottom:20px">
+    <div class="card"><div class="ct">Leads Per Campaign (Top 10) <span class="tip-ic" data-tip="Live across Calls, Web Bookings and Manual Calls, grouped by Campaign. Top 10 by lead count in the current period.">ⓘ</span></div><div class="chart-wrap" style="height:300px"><canvas id="mktCampaignChart"></canvas></div></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
+    <div class="card"><div class="ct">Cancelled Board <span class="tip-ic" data-tip="Needs job-status cancellation data. Awaiting connection.">ⓘ</span></div><div class="chart-wrap" style="height:240px"><canvas id="mktCancelReasonChart"></canvas></div></div>
+    <div class="card"><div class="ct">Leads — Unbooked Reason <span class="tip-ic" data-tip="Live from the Calls export: Lead = TRUE and Call Type = Unbooked, grouped by Call Reason.">ⓘ</span></div><div class="chart-wrap" style="height:240px"><canvas id="mktUnbookedReasonChart"></canvas></div></div>
+  </div>
+
+  <div class="tcard">
+    <div class="thead-row">
+      <div class="tcard-title">Lead Detail <span class="tip-ic" data-tip="Every lead in the selected range and filters — Calls (Lead = TRUE), Web Bookings, and Manual Calls (Jobs with no Call Campaign). Use the Source dropdown to view one source at a time.">ⓘ</span></div>
+      <div class="thead-right">
+        <select class="compare-sel" id="mktSourceSel" onchange="changeMktSource(this.value)">
+          <option value="all">All Sources</option>
+          <option value="calls">Calls</option>
+          <option value="webbookings">Web Bookings</option>
+          <option value="manual">Manual Calls</option>
+        </select>
+        <input type="text" id="mktLeadSearch" placeholder="Search customer, campaign, job #…" oninput="onLeadSearchInput(this.value)" class="search-box" style="width:200px">
+        <span class="tcnt" id="mkt-leaddetail-count">— leads</span>
+        <button class="btn-export" onclick="exportLeadDetailXLSX()">⬇ Export Excel</button>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th>#</th>
+        <th>Source</th>
+        <th onclick="sortLeadDetail('d8')" id="ldth-d8" class="sort-desc">Date</th>
+        <th>Time</th>
+        <th onclick="sortLeadDetail('customerName')" id="ldth-cust">Customer</th>
+        <th onclick="sortLeadDetail('campaign')" id="ldth-camp">Campaign</th>
+        <th onclick="sortLeadDetail('campaignCategory')" id="ldth-cat">Campaign Category</th>
+        <th onclick="sortLeadDetail('typeStatus')" id="ldth-type">Type / Status</th>
+        <th>Job #</th>
+        <th>Job Status</th>
+        <th onclick="sortLeadDetail('bizUnit')" id="ldth-bu">Business Unit</th>
+        <th>City</th>
+        <th>Recording</th>
+      </tr></thead>
+      <tbody id="mktLeadDetailBody"></tbody></table>
+    </div>
+    <div class="pg" id="mktLeadDetailPagination"></div>
+  </div>
+
+  <div class="tcard" id="mktUncatCard" style="border:1px solid #F0DCAE;background:#FFFDF4;margin-top:22px">
+    <div class="thead-row">
+      <div class="tcard-title" style="color:#6B4E10">⚠️ Needs Reclassification <span class="tip-ic" data-tip="Calls in the selected date range and Business Unit with no Call Campaign, or a blank Campaign Category (bucketed here as Uncategorized). 'No Campaign' is its own real category in this export — e.g. calls through the general office line — and is not flagged here.">ⓘ</span></div>
+      <div class="thead-right"><span class="tcnt" id="mkt-uncat-count" style="background:#F6E4AE;color:#6B4E10">— records</span></div>
+    </div>
+    <div style="background:#FBF1DA;border:1px solid #F0DCAE;color:#6B4E10;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12.5px;line-height:1.55">
+      <strong>⚠️ Please check and reclassify these calls, assigning a proper marketing campaign.</strong> Every row below has a blank Call Campaign or a blank Campaign Category — open it in ServiceTitan and fix the attribution.
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th>#</th>
+        <th>Type</th>
+        <th>Date</th>
+        <th>Customer</th>
+        <th>Phone</th>
+        <th>Campaign</th>
+        <th>Campaign Category</th>
+        <th>Job #</th>
+        <th>Open Job</th>
+        <th>Business Unit</th>
+        <th>Recording</th>
+      </tr></thead>
+      <tbody id="mktUncatBody"></tbody></table>
+    </div>
+    <div class="pg" id="mktUncatPagination"></div>
+  </div>
+</div><!-- /mktPage-overview -->
+
+<div class="main" id="mktPage-calls" style="display:none">
+
+  <div class="section-lbl">📞 Call Volume</div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:10px">
+    <div class="kpi kpi-compact"><div class="kpi-ico">📞</div><div class="kpi-lbl">Total Calls <span class="tip-ic" data-tip="Every call for the selected date range and filters.">ⓘ</span></div><div class="kpi-val" id="cak-total">—</div><div class="kpi-sub" id="cak-total-sub"></div></div>
+    <div class="kpi green kpi-compact"><div class="kpi-ico">✅</div><div class="kpi-lbl">Lead Calls <span class="tip-ic" data-tip="Calls with Lead = TRUE, for the selected filters.">ⓘ</span></div><div class="kpi-val" id="cak-lead">—</div><div class="kpi-sub" id="cak-lead-sub"></div></div>
+    <div class="kpi red kpi-compact"><div class="kpi-ico">🚫</div><div class="kpi-lbl">Unqualified Calls <span class="tip-ic" data-tip="Calls with Lead = FALSE, for the selected filters.">ⓘ</span></div><div class="kpi-val" id="cak-unqualified">—</div><div class="kpi-sub" id="cak-unqualified-sub"></div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+    <div class="kpi green kpi-compact"><div class="kpi-ico">🌞</div><div class="kpi-lbl">Business Hours <span class="tip-ic" data-tip="Calls with a Call Time between 8:00 AM and 4:59 PM (weekend calls are always After Hours).">ⓘ</span></div><div class="kpi-val" id="cak-biz">—</div><div class="kpi-sub" id="cak-biz-sub"></div></div>
+    <div class="kpi gold kpi-compact"><div class="kpi-ico">🌙</div><div class="kpi-lbl">After Hours <span class="tip-ic" data-tip="Calls with a Call Time at or after 5:00 PM, before 8:00 AM, or on a weekend.">ⓘ</span></div><div class="kpi-val" id="cak-after">—</div><div class="kpi-sub" id="cak-after-sub"></div></div>
+    <div class="kpi kpi-compact"><div class="kpi-ico">💼</div><div class="kpi-lbl">Weekday Calls</div><div class="kpi-val" id="cak-weekday">—</div><div class="kpi-sub" id="cak-weekday-sub"></div></div>
+    <div class="kpi kpi-compact"><div class="kpi-ico">🏖️</div><div class="kpi-lbl">Weekend Calls</div><div class="kpi-val" id="cak-weekend">—</div><div class="kpi-sub" id="cak-weekend-sub"></div></div>
+  </div>
+
+  <div style="margin-bottom:14px"><div class="card">
+    <div class="ct">Calls by Day <span class="tip-ic" data-tip="Every call in the selected date range, bucketed by Call Date and stacked as Lead (blue) vs Non-Lead (gray). The number above each bar is that day's total.">ⓘ</span></div>
+    <div class="thead-right" style="justify-content:flex-end;margin-bottom:-6px"><span class="tcnt" id="mktCallsByDay-count">— calls</span></div>
+    <div class="chart-wrap" style="height:280px"><canvas id="mktCallsByDayChart"></canvas></div>
+  </div></div>
+
+  <div style="margin-bottom:14px"><div class="card">
+    <div class="ct">Calls by Time of Day <span class="tip-ic" data-tip="Every call in the selected range bucketed by the hour its Call Time falls in. Business-hours bars (8am–5pm) are highlighted in blue; after-hours bars are muted gray.">ⓘ</span></div>
+    <div class="thead-right" style="justify-content:flex-end;margin-bottom:-6px"><span class="tcnt" id="mktCallsByHour-count">— calls</span></div>
+    <div class="chart-wrap" style="height:280px"><canvas id="mktCallsByHourChart"></canvas></div>
+  </div></div>
+
+  <div style="margin-bottom:20px"><div class="card">
+    <div class="ct">Calls by Source <span class="tip-ic" data-tip="Every call in the selected range, grouped by Call Campaign.">ⓘ</span></div>
+    <div class="thead-right" style="justify-content:flex-end;margin-bottom:-6px"><span class="tcnt" id="mktCallsBySource-count">— calls</span></div>
+    <div class="chart-wrap" style="height:280px"><canvas id="mktCallsBySourceChart"></canvas></div>
+  </div></div>
+
+  <div style="margin-bottom:20px"><div class="card">
+    <div class="ct">Unbooked Call Reasons <span class="tip-ic" data-tip="Call Reason on calls with Lead = TRUE and Call Type = Unbooked. 'Not specified' means Call Reason was left blank.">ⓘ</span></div>
+    <div class="thead-right" style="justify-content:flex-end;margin-bottom:-6px"><span class="tcnt" id="mktCallsUnbookedReason-count">— unbooked calls</span></div>
+    <div class="chart-wrap" style="height:260px"><canvas id="mktCallsUnbookedReasonChart"></canvas></div>
+  </div></div>
+
+  <div style="margin-bottom:20px"><div class="card">
+    <div class="ct">Calls by Excused Reason <span class="tip-ic" data-tip="Call Reason on calls with Call Type = Excused (includes both Lead and non-Lead calls). 'Not specified' means Call Reason was left blank.">ⓘ</span></div>
+    <div class="thead-right" style="justify-content:flex-end;margin-bottom:-6px"><span class="tcnt" id="mktCallsByExcused-count">— excused calls</span></div>
+    <div class="chart-wrap" style="height:260px"><canvas id="mktCallsByExcusedChart"></canvas></div>
+  </div></div>
+
+  <div class="tcard">
+    <div class="thead-row">
+      <div class="tcard-title">Calls Audit <span class="tip-ic" data-tip="Every call for the selected range and filters.">ⓘ</span></div>
+      <div class="thead-right">
+        <input class="search-box" type="text" id="callsAuditSearch" placeholder="Search customer, agent, channel, job #…" oninput="onCallsAuditSearchInput(this.value)">
+        <button class="btn-export" onclick="exportCallsAuditXLSX()">⬇ Export Excel</button>
+        <span class="tcnt" id="callsAudit-count">— calls</span>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th onclick="sortCallsAudit('d8')" id="cath-d8" class="sort-desc">Date</th>
+        <th onclick="sortCallsAudit('isLead')" id="cath-lead">Lead</th>
+        <th onclick="sortCallsAudit('campaign')" id="cath-channel">Channel</th>
+        <th onclick="sortCallsAudit('customerName')" id="cath-customer">Customer</th>
+        <th>Phone</th>
+        <th onclick="sortCallsAudit('name')" id="cath-agent">Name</th>
+        <th onclick="sortCallsAudit('callType')" id="cath-callType">Call Type</th>
+        <th onclick="sortCallsAudit('callTime')" id="cath-time">Time</th>
+        <th onclick="sortCallsAudit('lengthMin')" id="cath-lengthMin">Length</th>
+        <th onclick="sortCallsAudit('excused')" id="cath-excused">Excused</th>
+        <th>Reason</th>
+        <th>Call Memo</th>
+        <th>Listen</th>
+      </tr></thead>
+      <tbody id="callsAuditBody"></tbody></table>
+    </div>
+    <div class="pg" id="callsAuditPagination"></div>
+  </div>
+
+</div><!-- /mktPage-calls -->
+
+</div><!-- /db4 -->
+
+<!-- ══════════════════════════════════════════ -->
+<!-- DASHBOARD 5: ACCOUNTS RECEIVABLE             -->
+<!-- ══════════════════════════════════════════ -->
+<div class="db-panel" id="db5">
+<div class="fbar">
+  <label>Accounts Receivable</label>
+  <button class="btn-reset" onclick="loadAndInitAR()">↻ Refresh</button>
+  <span class="finfo" id="ar-finfo">Loading invoice data…</span>
+</div>
+
+<div class="main">
+  <div class="section-lbl">🧾 Open Receivables</div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+    <div class="kpi"><div class="kpi-ico">💰</div><div class="kpi-lbl">Total Open Receivables <span class="tip-ic" data-tip="Sum of Invoice Balance across every open (nonzero, positive-balance) invoice.">ⓘ</span></div><div class="kpi-val" id="ark-open">—</div><div class="kpi-sub" id="ark-open-sub">open invoice(s)</div></div>
+    <div class="kpi red"><div class="kpi-ico">⚠</div><div class="kpi-lbl">90+ Days Past Due <span class="tip-ic" data-tip="Open balance for invoices more than 90 days outstanding, per ServiceTitan's own Number of Days Outstanding.">ⓘ</span></div><div class="kpi-val" id="ark-90">—</div><div class="kpi-sub" id="ark-90-sub">invoice(s) at risk</div></div>
+    <div class="kpi"><div class="kpi-ico">📄</div><div class="kpi-lbl">Open Invoice Count <span class="tip-ic" data-tip="Count of invoices with a nonzero, positive balance, as of last refresh.">ⓘ</span></div><div class="kpi-val" id="ark-count">—</div><div class="kpi-sub">Nonzero balance</div></div>
+    <div class="kpi amber"><div class="kpi-ico">↩</div><div class="kpi-lbl">Credit Balances <span class="tip-ic" data-tip="Sum of negative Invoice Balance — customer overpayments / credits on account.">ⓘ</span></div><div class="kpi-val" id="ark-credit">—</div><div class="kpi-sub" id="ark-credit-sub">customer overpayment(s)</div></div>
+  </div>
+
+  <div class="tcard" style="margin-bottom:20px">
+    <div class="thead-row"><div class="tcard-title">Aging Breakdown <span class="tip-ic" data-tip="Every open invoice, bucketed by ServiceTitan's own Number of Days Outstanding. Negative-balance (credit) invoices are their own bucket, not aged.">ⓘ</span></div></div>
+    <div class="tbl-wrap" style="max-height:260px">
+      <table>
+        <thead><tr><th>Aging Bucket</th><th>Invoices</th><th>Open Balance</th><th>% of Open AR</th></tr></thead>
+        <tbody id="arAgingBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tcard">
+    <div class="thead-row">
+      <div class="tcard-title">Open Invoice Detail <span class="tip-ic" data-tip="One row per invoice with a nonzero balance, oldest first by default. Click a column header to sort.">ⓘ</span></div>
+      <div class="thead-right">
+        <input class="search-box" type="text" id="arDetailSearch" placeholder="Search invoice #, customer, job #…" oninput="onARSearchInput(this.value)">
+        <span class="tcnt" id="ar-detail-count">— invoices</span>
+        <button class="btn-export" onclick="exportARXLSX()">⬇ Export Excel</button>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th onclick="sortAR('invoiceNumber')" id="arth-invoiceNumber">Invoice #</th>
+          <th onclick="sortAR('customerName')" id="arth-customerName">Customer</th>
+          <th onclick="sortAR('d8')" id="arth-d8" class="sort-asc">Invoice Date</th>
+          <th onclick="sortAR('daysOutstanding')" id="arth-daysOutstanding">Days Outstanding</th>
+          <th onclick="sortAR('agingBucket')" id="arth-agingBucket">Aging Bucket</th>
+          <th onclick="sortAR('balance')" id="arth-balance">Open Balance</th>
+          <th onclick="sortAR('amountPaid')" id="arth-amountPaid">Amount Paid</th>
+          <th onclick="sortAR('subtotal')" id="arth-subtotal">Invoice Subtotal</th>
+          <th onclick="sortAR('lastPaidD8')" id="arth-lastPaidD8">Last Paid Date</th>
+          <th onclick="sortAR('status')" id="arth-status">ST Status</th>
+          <th onclick="sortAR('bizUnit')" id="arth-bizUnit">Business Unit</th>
+          <th onclick="sortAR('jobNumber')" id="arth-jobNumber">Job #</th>
+          <th>Open Job</th>
+          <th onclick="sortAR('jobType')" id="arth-jobType">Job Type</th>
+          <th onclick="sortAR('technician')" id="arth-technician">Technician</th>
+          <th onclick="sortAR('campaign')" id="arth-campaign">Campaign / Source</th>
+        </tr></thead>
+        <tbody id="arDetailBody"></tbody>
+      </table>
+    </div>
+    <div class="pg" id="arDetailPagination"></div>
+  </div>
+</div>
+</div><!-- /db5 -->
+
 </div><!-- /app-shell -->
 
 <div class="load-overlay" id="loadOverlay">
@@ -786,8 +1201,17 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbxROkWLe7uY8peQzXTCxLXk
 // The two report keys requested via GAS_URL+'?report='+KEY, same convention
 // as Sunline's '?report=estimates' / '?report=jobs'. Change these if the
 // Apps Script's doGet(e) branches on different key names.
+// quickbooksBills is still the localStorage cache key ('cb_quickbooksBills')
+// for the QuickBooks Bills report, but as of 2026-09-12 it is no longer
+// fetched via GAS_URL either — see QB_BILLS_CONFIG below and
+// fetchQBBillsBlob() for the new Azure Blob source (servicetitanBills is
+// unchanged, still via Apps Script, until/unless that one moves too).
 const REPORT_KEY_QB = 'quickbooksBills';
 const REPORT_KEY_ST = 'servicetitanBills';
+// vendorTransactions is still the localStorage cache key ('cb_vendorTransactions')
+// for Vendor Invoice Coverage's data, but as of 2026-09-12 it is no longer
+// fetched via GAS_URL — see PO_CONFIG below, fetchVendorTxnsBlob(), and the
+// updated VENDOR_TXN_FIELD_ALIASES comment for the new Azure Blob source.
 const REPORT_KEY_VENDOR_TXNS = 'vendorTransactions';
 const REPORT_KEY_QB_MEMBERSHIP = 'quickbooksMembership';
 const REPORT_KEY_ST_MEMBERSHIP = 'servicetitanMembership';
@@ -810,7 +1234,7 @@ const CACHE_TTL = 15 * 60 * 1000; // 15 min
 // Sunline's dashboard uses for ServiceTitan exports.
 const FIELD_ALIASES = {
   vendor:     ['vendor','vendor name','payee','supplier','customer','name'],
-  billNumber: ['bill number','bill #','billno','bill no','ref number','reference number','reference #','invoice number','invoice #','invoice no','doc number','po number','po #','number'],
+  billNumber: ['bill number','bill #','billno','bill no','ref number','reference number','reference #','invoice number','invoice #','invoice no','doc number','po number','po #','number','num'],
   amount:     ['amount','total','bill amount','total amount','balance','amount due'],
   date:       ['date','bill date','txn date','transaction date','invoice date','created date'],
 };
@@ -841,18 +1265,71 @@ const ITEM_SPLIT_ACCOUNT_ALIASES=['item split account','split account','item acc
 // spend chart; see the stNotRequired flag set in makeRow() below.
 const NO_ST_MATCH_ACCOUNTS=new Set(['supplies (shop)']);
 
-// Vendor Transactions source-of-truth sheet (Code.gs's VENDOR_TRANSACTIONS_SOURCE,
-// apiKey "vendorTransactions") — one tab per vendor, columns like
-// INVOICE_NUMBER / INVOICE_DATE / PO_NUMBER / TOTAL_DUE (some tabs also
-// have a Job Name column; column order varies by tab, hence alias-based
-// lookup same as everything else here). The Vendor column is set by
-// Code.gs itself from the tab name, so it's usually literally "Vendor".
+// Vendor Invoice Coverage's source-of-truth used to be a hand-maintained
+// "Vendor Transactions" Google Sheet, ingested via Code.gs and served
+// through GAS_URL (apiKey "vendorTransactions"). As of 2026-09-12, per
+// Ariel's request, that pipeline is replaced with ServiceTitan's own
+// "Purchase Order Reconciliation" export, fetched directly from Azure Blob
+// Storage (same pattern as the Jobs/Estimates tabs — see fetchBlobXLSX()
+// and fetchVendorTxnsBlob() below) instead of going through Apps Script.
+// This export's columns: Transaction Number, Vendor Name, Transaction
+// Type (Bill/Return in practice), Transaction Status, Business Unit, Job
+// Number, Customer Name, Date, Total, Date Billed, Date Created — it's
+// structurally close to the servicetitanBills report itself (same
+// ST-internal transaction-number scheme, e.g. "105676812-B1"), so
+// Transaction Number doubles as the Bill/Ref # this table matches against
+// QuickBooks/ServiceTitan bills with.
+const PO_CONFIG = {
+  // Blob-scoped SAS token (sr=b), valid through 2030-09-12 — same
+  // container-account convention as JOBS_CONFIG/ESTIMATES_CONFIG.
+  sasUrl: 'https://coolbreeze.blob.core.windows.net/coolbreeze/Purchase%20Orders%20This%20Year.xlsx?sp=r&st=2026-09-12T12:46:41Z&se=2030-09-12T21:01:41Z&spr=https&sv=2026-02-06&sr=b&sig=u9T%2FIM3CaIWFyrOAVzmUMzWnyeDMywOvcHckF1w%2BLYo%3D'
+};
+
+// QuickBooks Bills report (Bills Reconciliation tab, QuickBooks side) — as
+// of 2026-09-12, per Ariel's request, also moved off Apps Script onto a
+// direct Azure Blob fetch (see fetchQBBillsBlob() below). This is the raw
+// QuickBooks "Bills Check - Ezzybill" export, UNCHANGED from what Code.gs
+// used to ingest from Gmail: it still has the same title-block-before-the-
+// real-header-row shape that caused the original "QB Total showing $0" bug
+// (see the file-level history note near the top of this script) — Code.gs
+// used to strip that server-side before serving JSON, so fetching the raw
+// file directly means this dashboard now has to do that trimming itself;
+// see trimQBBillsReportChrome() below, used by fetchQBBillsBlob(). Columns:
+// Vendor, Date, Transaction type (Bill/Vendor Credit), Num, Posting (Y/N),
+// Memo, Account full name, Amount, Item split account, Transaction ID —
+// the export also ends with a TOTAL row, some blank rows, and a single-cell
+// export-timestamp row, all trimmed by the same function.
+const QB_BILLS_CONFIG = {
+  // Blob-scoped SAS token (sr=b), valid through 2030-09-12.
+  sasUrl: 'https://coolbreeze.blob.core.windows.net/coolbreeze/Bills%20Quickbooks.xlsx?sp=r&st=2026-09-12T13:34:59Z&se=2030-09-12T21:49:59Z&spr=https&sv=2026-02-06&sr=b&sig=%2FVkVSPQJUQ3TxsP24T3psp7KIU329nv1AA416kMn5UU%3D'
+};
+
+// ServiceTitan Membership Balance report (Membership Reconciliation tab, ST
+// side) — as of 2026-09-12, per Ariel's request, also moved off Apps Script
+// onto a direct Azure Blob fetch (see fetchSTMembershipBlob() below), same
+// pattern as Jobs/Estimates/PO/QB Bills. Columns (596 real rows, one clean
+// header row — no title-block/footer chrome to trim, unlike the QB Bills
+// export): Customer ID, Customer Name, Last Billing Amount, Membership
+// Sale/Renewal Price, Membership Type, Current Status, Membership ID,
+// Membership Duration, From, To, Location ID, Status As Of, Preferred
+// Payment Method, Deferred Revenue, Recognized Revenue, Deferred Revenue
+// Balance, Initial Deferred Revenue — matches ST_MEMBERSHIP_FIELD_ALIASES
+// above exactly, so buildMembershipReconciliation()/pickField() needed no
+// changes; fetchBlobXLSX()'s header:1 array-of-arrays output is converted
+// to header-keyed objects by the existing toObjects() helper, same as the
+// GAS-JSON shape it replaces. QuickBooks Membership Balance (the deferred-
+// balance ledger, apiKey quickbooksMembership) is UNCHANGED, still fetched
+// via GAS_URL — Ariel only sent the ServiceTitan-side export this time.
+const ST_MEMBERSHIP_CONFIG = {
+  // Blob-scoped SAS token (sr=b), valid through 2030-09-12.
+  sasUrl: 'https://coolbreeze.blob.core.windows.net/coolbreeze/Memberships.xlsx?sp=r&st=2026-09-12T16:58:45Z&se=2030-09-13T01:13:45Z&spr=https&sv=2026-02-06&sr=b&sig=3S2VbY7nQir17uaFjiTqKgsRljttP9GUi0V9MwyDBtM%3D'
+};
 const VENDOR_TXN_FIELD_ALIASES = {
-  vendor:        ['vendor'],
-  invoiceNumber: ['invoice number','invoice #','invoice no','invoiceno'],
-  poNumber:      ['po number','po #','po no','pono'],
-  amount:        ['total due','amount','total','amount due'],
-  date:          ['invoice date','date'],
+  vendor:     ['vendor name','vendor'],
+  refNumber:  ['transaction number','transaction #','transaction no'],
+  amount:     ['total','amount','amount due'],
+  date:       ['date billed','invoice date','date'], // Returns fall back to Date Created — handled in normalizeVendorTxnRows
+  txnType:    ['transaction type'],
 };
 
 // Membership Balance dimension. QuickBooks Membership Balance (apiKey
@@ -1247,45 +1724,64 @@ function buildReconciliation(qbRaw,stRaw){
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// VENDOR INVOICE COVERAGE — third reconciliation dimension. The Vendor
-// Transactions sheet is the source of truth for what vendors actually
-// invoiced; for each of those invoices/POs we check whether a bill with
-// the same Bill/Ref # (invoice # or PO #) shows up in the QuickBooks and
-// ServiceTitan bill reports — reusing the same billNumber field those two
-// reports already normalize to (see FIELD_ALIASES.billNumber, which
-// already includes "invoice number" and "po number").
+// VENDOR INVOICE COVERAGE — third reconciliation dimension. ServiceTitan's
+// own Purchase Order Reconciliation export (Azure Blob — see PO_CONFIG) is
+// the source of truth for what vendor transactions ServiceTitan has on
+// file; for each of those we check whether a bill with the same Bill/Ref #
+// (Transaction Number) shows up in the QuickBooks and ServiceTitan bill
+// reports — reusing the same billNumber field those two reports already
+// normalize to (see FIELD_ALIASES.billNumber, which already includes
+// "invoice number" and "po number", so a ST-style transaction number like
+// "105676812-B1" still matches via the "number" fallback alias). Since
+// this source IS ServiceTitan data, "In ServiceTitan" should read ~100%
+// true in practice — the meaningful signal here is "In QuickBooks".
 // ══════════════════════════════════════════════════════════════════════════
 function normalizeVendorTxnRows(rawRows){
   const objs=toObjects(rawRows);
   const unmapped=new Set();
   const out=objs.map((obj,i)=>{
     const vendorRaw=pickField(obj,VENDOR_TXN_FIELD_ALIASES.vendor);
-    const invoiceRaw=pickField(obj,VENDOR_TXN_FIELD_ALIASES.invoiceNumber);
-    const poRaw=pickField(obj,VENDOR_TXN_FIELD_ALIASES.poNumber);
-    const amountRaw=pickField(obj,VENDOR_TXN_FIELD_ALIASES.amount);
-    const dateRaw=pickField(obj,VENDOR_TXN_FIELD_ALIASES.date);
+    const refRaw=pickField(obj,VENDOR_TXN_FIELD_ALIASES.refNumber);
+    let amountRaw=pickField(obj,VENDOR_TXN_FIELD_ALIASES.amount);
+    let dateRaw=pickField(obj,VENDOR_TXN_FIELD_ALIASES.date);
+    const txnType=String(pickField(obj,VENDOR_TXN_FIELD_ALIASES.txnType)||'').trim();
+
+    // Same ServiceTitan-export quirks normalizeRows() already handles for
+    // the main servicetitanBills report (this PO export uses the same
+    // conventions): a "Return" row's Total is positive in the raw export,
+    // so flip it negative to net correctly against Bills; and Date Billed
+    // is blank on Returns (they're never billed), so fall back to Date
+    // Created for those rows.
+    if(txnType.toLowerCase()==='return'&&amountRaw!==undefined&&amountRaw!==null&&amountRaw!==''){
+      amountRaw=-Math.abs(sf(amountRaw));
+    }
+    if(dateRaw===undefined||dateRaw===null||dateRaw===''){
+      const createdRaw=pickField(obj,['date created']);
+      if(createdRaw!==undefined)dateRaw=createdRaw;
+    }
+
     if(vendorRaw===undefined)unmapped.add('vendor');
     if(amountRaw===undefined)unmapped.add('amount');
     const vendor=String(vendorRaw||'').trim()||'(Unknown Vendor)';
-    const invoiceNumber=String(invoiceRaw==null?'':invoiceRaw).trim();
-    const poNumber=String(poRaw==null?'':poRaw).trim();
+    const refNumber=String(refRaw==null?'':refRaw).trim();
     const amount=sf(amountRaw);
     const date=sd(dateRaw);
     return {
       _i:i, vendor, vendorK:vendorKey(vendor),
-      invoiceNumber, poNumber, amount,
+      refNumber, amount, txnType,
       date, dateISO:isoDay(date),
       matchCode:buildMatchCode(amount,date,vendor).key,
       raw:obj
     };
-  }).filter(r=>r.invoiceNumber||r.poNumber||r.amount!==0);
-  if(unmapped.size)console.warn('[Coolbreeze] Vendor Transactions: could not confidently map columns for: '+[...unmapped].join(', ')+'. Extend VENDOR_TXN_FIELD_ALIASES at the top of the script if these look wrong. Detected headers:',objs[0]?Object.keys(objs[0]):[]);
+  }).filter(r=>(r.refNumber||r.amount!==0)&&!JUNK_VENDOR_RE.test(r.vendor.trim()));
+  if(unmapped.size)console.warn('[Coolbreeze] Purchase Orders (Vendor Coverage): could not confidently map columns for: '+[...unmapped].join(', ')+'. Extend VENDOR_TXN_FIELD_ALIASES at the top of the script if these look wrong. Detected headers:',objs[0]?Object.keys(objs[0]):[]);
   return out;
 }
 
 // BUGFIX: this used to check ONLY exact Bill/Ref # equality between the
-// vendor sheet's Invoice #/PO # and whatever QuickBooks/ServiceTitan store
-// as their own Bill/Ref # — but QB/ST commonly use their own internal doc
+// vendor sheet's Invoice #/PO # (now: ServiceTitan's own Transaction
+// Number) and whatever QuickBooks/ServiceTitan store as their own Bill/Ref
+// # — but QB/ST commonly use their own internal doc
 // numbering instead of the vendor's invoice number, so that check almost
 // never matched anything (every single vendor-transaction row was coming
 // back "missing" from both systems, even bills that were genuinely
@@ -1326,7 +1822,7 @@ function buildVendorCoverage(vendorRaw,qbRaw,stRaw){
   const st=normalizeRows(stRaw||[],'ServiceTitan');
   const qbRefs=new Set(qb.filter(r=>r.billNumber).map(r=>r.billNumber.toLowerCase()));
   const stRefs=new Set(st.filter(r=>r.billNumber).map(r=>r.billNumber.toLowerCase()));
-  const hasRef=(refs,v)=>(v.invoiceNumber&&refs.has(v.invoiceNumber.toLowerCase()))||(v.poNumber&&refs.has(v.poNumber.toLowerCase()));
+  const hasRef=(refs,v)=>v.refNumber&&refs.has(v.refNumber.toLowerCase());
   const qbCodes=new Set(qb.map(r=>r.matchCode));
   const stCodes=new Set(st.map(r=>r.matchCode));
 
@@ -1456,6 +1952,10 @@ function showDB(n){
   document.querySelectorAll('.sidebar-item').forEach(b=>b.classList.remove('active'));
   const panel=document.getElementById('db'+n); if(panel)panel.classList.add('active');
   const nav=document.getElementById('nav-db'+n); if(nav)nav.classList.add('active');
+  // A Chart.js canvas created (or last drawn) while its .db-panel was
+  // display:none renders at 0x0 until explicitly resized — same fix already
+  // applied to the Bills<->Membership view switch below (switchReconView).
+  if(n===4 && typeof MKT_CHARTS!=='undefined'){ Object.values(MKT_CHARTS).forEach(c=>{ if(c)c.resize(); }); }
 }
 
 // Bills Reconciliation <-> Membership Reconciliation view switch (dropdown
@@ -1968,7 +2468,7 @@ function applyVendorCoverage(){
     if(status==='missing_st'&&r.inST)return false;
     if(status==='missing_both'&&(r.inQB||r.inST))return false;
     if(status==='in_both'&&!(r.inQB&&r.inST))return false;
-    if(q&&!(r.vendor.toLowerCase().includes(q)||r.invoiceNumber.toLowerCase().includes(q)||r.poNumber.toLowerCase().includes(q)))return false;
+    if(q&&!(r.vendor.toLowerCase().includes(q)||r.refNumber.toLowerCase().includes(q)))return false;
     return true;
   });
   renderVendorCoverageTable();
@@ -1980,13 +2480,12 @@ function renderVendorCoverageTable(){
   const rows=VC_FILTERED.slice(0,VC_ROW_CAP);
   body.innerHTML=rows.map(r=>`<tr>
       <td class="td-vend">${r.vendor}</td>
-      <td>${r.invoiceNumber||'—'}</td>
-      <td>${r.poNumber||'—'}</td>
+      <td>${r.refNumber||'—'}</td>
       <td class="td-val">${fmtFull(r.amount)}</td>
       <td>${fmtDate(r.date)}</td>
       <td>${r.inQB?'<span class="badge badge-covered">✓ Yes</span>':'<span class="badge badge-missing">✕ Missing</span>'}</td>
       <td>${r.inST?'<span class="badge badge-covered">✓ Yes</span>':'<span class="badge badge-missing">✕ Missing</span>'}</td>
-    </tr>`).join('') || `<tr><td colspan="7" style="text-align:center;color:var(--gray-500);padding:24px">No vendor transactions match the current filters.</td></tr>`;
+    </tr>`).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--gray-500);padding:24px">No purchase order transactions match the current filters.</td></tr>`;
   const missingQB=ALL_VENDOR_COVERAGE.filter(r=>!r.inQB).length;
   const missingST=ALL_VENDOR_COVERAGE.filter(r=>!r.inST).length;
   let countText=`${VC_FILTERED.length} of ${ALL_VENDOR_COVERAGE.length} · ${missingQB} missing from QB · ${missingST} missing from ST`;
@@ -2088,11 +2587,11 @@ async function loadAndInit(){
     document.getElementById('lastUpdated').textContent=`⚡ Cached ${fmtTime()} — refreshing…`;
     try{
       const [qbRows,stRows,vendorTxnRows,qbMemRows,stMemRows]=await Promise.all([
-        fetchReportWithRetry(REPORT_KEY_QB).catch(e=>{console.warn('[QB bg]',e.message);return cachedQB;}),
+        fetchQBBillsBlob().catch(e=>{console.warn('[QB bg]',e.message);return cachedQB;}),
         fetchReportWithRetry(REPORT_KEY_ST).catch(e=>{console.warn('[ST bg]',e.message);return cachedST;}),
-        fetchReportWithRetry(REPORT_KEY_VENDOR_TXNS).catch(e=>{console.warn('[VendorTxns bg]',e.message);return cachedVendorTxns;}),
+        fetchVendorTxnsBlob().catch(e=>{console.warn('[VendorTxns bg]',e.message);return cachedVendorTxns;}),
         fetchReportWithRetry(REPORT_KEY_QB_MEMBERSHIP).catch(e=>{console.warn('[QB Membership bg]',e.message);return cachedQBMem;}),
-        fetchReportWithRetry(REPORT_KEY_ST_MEMBERSHIP).catch(e=>{console.warn('[ST Membership bg]',e.message);return cachedSTMem;})
+        fetchSTMembershipBlob().catch(e=>{console.warn('[ST Membership bg]',e.message);return cachedSTMem;})
       ]);
       if(qbRows)setCache(REPORT_KEY_QB,qbRows);
       if(stRows)setCache(REPORT_KEY_ST,stRows);
@@ -2116,15 +2615,15 @@ async function loadAndInit(){
     tick=setInterval(()=>{ const el=document.getElementById('load-timer'); if(el)el.textContent=((Date.now()-t0)/1000).toFixed(0)+'s elapsed'; },500);
     setStep('Connecting to Google Drive…','Fetching QuickBooks, ServiceTitan, Vendor Transactions & Membership Balance reports');
     const [qbRows,stRows,vendorTxnRows,qbMemRows,stMemRows]=await Promise.all([
-      fetchReportWithRetry(REPORT_KEY_QB).catch(e=>{console.warn('[QB]',e.message);throw e;}),
+      fetchQBBillsBlob().catch(e=>{console.warn('[QB]',e.message);throw e;}),
       fetchReportWithRetry(REPORT_KEY_ST).catch(e=>{console.warn('[ST]',e.message);throw e;}),
       // Non-fatal: the vendor-coverage and membership-balance sections are
       // bonus dimensions, not core to the dashboard — a hiccup in either
       // (e.g. sheet permissions, no report processed yet) shouldn't block
       // the rest of the dashboard from loading.
-      fetchReportWithRetry(REPORT_KEY_VENDOR_TXNS).catch(e=>{console.warn('[VendorTxns]',e.message);return [];}),
+      fetchVendorTxnsBlob().catch(e=>{console.warn('[VendorTxns]',e.message);return [];}),
       fetchReportWithRetry(REPORT_KEY_QB_MEMBERSHIP).catch(e=>{console.warn('[QB Membership]',e.message);return [];}),
-      fetchReportWithRetry(REPORT_KEY_ST_MEMBERSHIP).catch(e=>{console.warn('[ST Membership]',e.message);return [];})
+      fetchSTMembershipBlob().catch(e=>{console.warn('[ST Membership]',e.message);return [];})
     ]);
     clearInterval(tick);
     setStep('Processing data…','Matching bills between systems');
@@ -2357,6 +2856,19 @@ function parseJobsRows(rows){
 function processJobs(rows,prevYearRows){
   ALL_JOBS=parseJobsRows(rows).concat(prevYearRows?parseJobsRows(prevYearRows):[]);
   console.log('[Jobs] Parsed',ALL_JOBS.length,'jobs (including previous-year rows if provided)');
+  // Marketing tab's Manual Calls component reads ALL_JOBS directly — refresh
+  // it in case Calls/Web Bookings already finished loading before Jobs did.
+  if(typeof refreshMktAfterJobsLoad==='function') refreshMktAfterJobsLoad();
+}
+
+// Accounts Receivable tab's Invoices feed (loaded on its own script block,
+// possibly after this one) supplies job-less "Construction" revenue for the
+// KPI/chart below — re-render once it's ready, in case it finishes loading
+// after Jobs data already rendered (mirrors refreshMktAfterJobsLoad above,
+// in the opposite direction). Safe to call even if Jobs hasn't loaded yet
+// (ALL_JOBS starts as [] and applyJobFilters() handles that fine).
+function refreshJobsAfterARLoad(){
+  if(typeof applyJobFilters==='function') applyJobFilters();
 }
 
 // ── MULTI-SELECT FILTERS (Business Unit / Technician / Job Type / Campaign
@@ -2475,13 +2987,16 @@ function renderJobKPIs(){
   const from=document.getElementById('jobDateFrom').value,to=document.getElementById('jobDateTo').value;
   const n=jobFiltered.length;
   const rev=jobFiltered.reduce((s,j)=>s+j.rev,0);
+  const constrAmt=(typeof constructionRevForRange==='function')?constructionRevForRange(from,to):0;
   const labor=jobFiltered.reduce((s,j)=>s+j.labor,0);
   const matl=jobFiltered.reduce((s,j)=>s+j.matl,0);
   const gm=jobFiltered.reduce((s,j)=>s+j.gm,0);
   const gmPct=rev>0?gm/rev*100:0;
   const avg=n>0?rev/n:0;
   document.getElementById('jk-total').textContent=n.toLocaleString();
-  document.getElementById('jk-rev').textContent=fmtM(rev);
+  document.getElementById('jk-rev').textContent=fmtM(rev+constrAmt);
+  const revSubEl=document.getElementById('jk-rev-sub');
+  if(revSubEl) revSubEl.textContent=constrAmt>0?('Service '+fmtM(rev)+' + Construction '+fmtM(constrAmt)):'Job revenue';
   const laborPct=rev>0?labor/rev*100:0,matlPct=rev>0?matl/rev*100:0;
   document.getElementById('jk-labor').textContent=rev>0?laborPct.toFixed(1)+'%':'—';
   document.getElementById('jk-labor-sub').textContent=fmtM(labor);
@@ -2516,8 +3031,9 @@ function renderJobKPIs(){
     const pn=prevCompleted.length,prevRev=prevCompleted.reduce((s,j)=>s+j.rev,0),prevGm=prevCompleted.reduce((s,j)=>s+j.gm,0);
     const prevLabor=prevCompleted.reduce((s,j)=>s+j.labor,0),prevMatl=prevCompleted.reduce((s,j)=>s+j.matl,0);
     const prevGmPct=prevRev>0?prevGm/prevRev*100:0,prevAvg=pn>0?prevRev/pn:0;
+    const prevConstrAmt=(typeof constructionRevForRange==='function')?constructionRevForRange(cmp.from,cmp.to):0;
     document.getElementById('jkd-total').innerHTML=jobFmtDelta(n,pn,pn.toString());
-    document.getElementById('jkd-rev').innerHTML=jobFmtDelta(rev,prevRev,fmtM(prevRev));
+    document.getElementById('jkd-rev').innerHTML=jobFmtDelta(rev+constrAmt,prevRev+prevConstrAmt,fmtM(prevRev+prevConstrAmt));
     const prevLaborPct=prevRev>0?prevLabor/prevRev*100:0,prevMatlPct=prevRev>0?prevMatl/prevRev*100:0;
     document.getElementById('jkd-labor').innerHTML=jobFmtDeltaPts(laborPct,prevLaborPct,prevLaborPct.toFixed(1)+'%');
     document.getElementById('jkd-matl').innerHTML=jobFmtDeltaPts(matlPct,prevMatlPct,prevMatlPct.toFixed(1)+'%');
@@ -2550,26 +3066,41 @@ function renderJobCharts(){
     });
     return sums;
   }
+  function monthlyConstrForYear(y){
+    return (typeof monthlyConstructionRevForYear==='function')?monthlyConstructionRevForYear(y):Array(12).fill(0);
+  }
   const revYearSel=document.getElementById('jobRevYearSel');
   const selYear=parseInt((revYearSel&&revYearSel.value)||'',10)||new Date().getFullYear();
   const nowD=new Date(),nowYear=nowD.getFullYear(),nowMonth=nowD.getMonth()+1;
   const lastMonth=(selYear===nowYear)?nowMonth:12;
-  const curYearSums=monthlyRevForYear(selYear);
-  const prevYearSums=monthlyRevForYear(selYear-1);
+  const curServiceSums=monthlyRevForYear(selYear);
+  const prevServiceSums=monthlyRevForYear(selYear-1);
+  const curConstrSums=monthlyConstrForYear(selYear);
+  const prevConstrSums=monthlyConstrForYear(selYear-1);
   const revLabels=MONTH_ABBR.slice(0,lastMonth);
-  const revData=curYearSums.slice(0,lastMonth).map(v=>v/1000);
+  const serviceData=curServiceSums.slice(0,lastMonth).map(v=>v/1000);
+  const constrData=curConstrSums.slice(0,lastMonth).map(v=>v/1000);
   destroyJobChart('rev');
-  JOB_CHARTS.rev=new Chart(document.getElementById('jobRevChart'),{type:'bar',data:{labels:revLabels,datasets:[{label:'Revenue ($K)',data:revData,backgroundColor:'#2563eb',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{
-    label:(ctx)=>'Revenue: '+fmtM(ctx.parsed.y*1000),
+  JOB_CHARTS.rev=new Chart(document.getElementById('jobRevChart'),{type:'bar',data:{labels:revLabels,datasets:[
+    {label:'Service',data:serviceData,backgroundColor:'#2563eb',borderRadius:4,stack:'rev'},
+    {label:'Construction',data:constrData,backgroundColor:'#e08a1e',borderRadius:4,stack:'rev'}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',labels:{boxWidth:12,padding:12}},tooltip:{callbacks:{
+    label:(ctx)=>ctx.dataset.label+': '+fmtM(ctx.parsed.y*1000),
     afterLabel:(ctx)=>{
       const i=ctx.dataIndex;
-      const curVal=curYearSums[i]||0,prevVal=prevYearSums[i]||0;
+      const isConstr=ctx.datasetIndex===1;
+      const curVal=(isConstr?curConstrSums[i]:curServiceSums[i])||0;
+      const prevVal=(isConstr?prevConstrSums[i]:prevServiceSums[i])||0;
       const lines=['Same month '+(selYear-1)+': '+fmtM(prevVal)];
       if(prevVal>0){const yoy=(curVal-prevVal)/prevVal*100;lines.push('YoY: '+(yoy>=0?'+':'')+yoy.toFixed(1)+'%');}
       else{lines.push('YoY: — (no '+(selYear-1)+' data)');}
       return lines;
+    },
+    footer:(items)=>{
+      const total=items.reduce((s,it)=>s+it.parsed.y,0);
+      return 'Total: '+fmtM(total*1000);
     }
-  }}},scales:{y:{beginAtZero:true,ticks:{callback:v=>'$'+v+'K'}}}}});
+  }}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,ticks:{callback:v=>'$'+v+'K'}}}}});
 
   const byBu={};
   jobFiltered.forEach(j=>{byBu[j.b]=(byBu[j.b]||0)+1;});
@@ -2703,6 +3234,46 @@ async function fetchBlobXLSX(url){
   const ws=wb.Sheets[wb.SheetNames[0]];
   return XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
 }
+// Vendor Invoice Coverage's Purchase Orders source (see PO_CONFIG up top,
+// near VENDOR_TXN_FIELD_ALIASES) — same fetchBlobXLSX() helper as Jobs/
+// Estimates, just called from loadAndInit() in the first script block
+// instead of its own DOMContentLoaded hook, since Vendor Invoice Coverage
+// already lives inside the main Bills-tab load/render cycle.
+async function fetchVendorTxnsBlob(){return fetchBlobXLSX(PO_CONFIG.sasUrl);}
+// ServiceTitan Membership Balance source (see ST_MEMBERSHIP_CONFIG up top) —
+// same fetchBlobXLSX() helper, no chrome-trimming needed (clean header row).
+async function fetchSTMembershipBlob(){return fetchBlobXLSX(ST_MEMBERSHIP_CONFIG.sasUrl);}
+
+// QuickBooks Bills report's raw export still has a QuickBooks title block
+// (company name / report name / date range / a blank row) before the real
+// header row, and a footer block (a TOTAL row, blank rows, and a single-
+// cell export-timestamp row) after the real data — Code.gs used to trim
+// both server-side (see QB_BILLS_CONFIG's comment up top) before this
+// dashboard ever saw the JSON; fetching the blob directly means doing that
+// trim here instead. Finds the header row as the first row with at least 4
+// populated cells (the title-block rows only ever have 1, a blank row has
+// 0), then trims trailing rows below that same 4-cell threshold (catches
+// the TOTAL row — which normalizeRows()'s JUNK_VENDOR_RE also independently
+// filters by name, a harmless belt-and-suspenders overlap — the blank rows,
+// and the timestamp row, without needing to hardcode any of those exact
+// shapes). Real bill rows are always well above the threshold (8-10
+// populated cells), so this can't accidentally eat real data.
+function trimQBBillsReportChrome(rows){
+  if(!rows||!rows.length)return rows;
+  const popCount=r=>r?r.filter(c=>c!==null&&c!==undefined&&String(c).trim()!=='').length:0;
+  let headerIdx=rows.findIndex(r=>popCount(r)>=4);
+  if(headerIdx<0)headerIdx=0;
+  const header=rows[headerIdx];
+  const dataRows=rows.slice(headerIdx+1);
+  let end=dataRows.length;
+  while(end>0&&popCount(dataRows[end-1])<4)end--;
+  return [header,...dataRows.slice(0,end)];
+}
+async function fetchQBBillsBlob(){
+  const rows=await fetchBlobXLSX(QB_BILLS_CONFIG.sasUrl);
+  return trimQBBillsReportChrome(rows);
+}
+
 async function fetchJobsBlob(){return fetchBlobXLSX(JOBS_CONFIG.sasUrl);}
 async function fetchJobsPrevYearBlob(){
   if(!JOBS_CONFIG.sasUrlPrevYear)return null;
@@ -3416,6 +3987,1556 @@ clearAllCache=function(){
 };
 
 document.addEventListener('DOMContentLoaded', loadAndInitEstimates);
+</script>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════
+// MARKETING TAB (added) — mirrors the shape of Best Plumber's "Marketing"
+// tab (Overview + Call Analysis pages), reusing Coolbreeze's existing
+// helpers (sd/isoDay/esc/fmtDate/todayISO/monthStartISO/getCached/setCache/
+// CACHE_TTL/fetchBlobXLSX/PAGE_SIZE/renderJobPagination/exportJobsXLSX/
+// MS_OPTS/MS_SEL/MS_LABEL/MS_APPLY/toggleMS/renderMSItems/updateMSBtn)
+// instead of redefining them.
+//
+// Per Ariel (2026-09-12): only the Calls Service Titan export is connected
+// so far ("I'll start with the calls report and will send bookings and
+// manual jobs later"). Every KPI/chart/table column that's fully derivable
+// from Calls alone is live; everything that would need Bookings, Manual
+// Jobs, ad Spend, or GMB is rendered as "—" / "Awaiting data source" (the
+// exact convention Best Plumber's own Marketing tab already uses for its
+// own not-yet-connected pieces) rather than showing a partial number that
+// would look complete but silently exclude required inputs. The Google PPC
+// Analysis page is skipped entirely — it has no Calls involvement at all.
+//
+// Lead definition, per Ariel's explicit choice (2026-09-12 AskUserQuestion,
+// "Use the file's own Lead column (Recommended)"): trust this export's own
+// Lead column as-is — it flags a broader set of calls as leads than Call
+// Type Booked/Unbooked alone would (roughly half of "Abandoned" calls also
+// carry Lead=TRUE here), unlike Best Plumber's dashboard which derives Lead
+// from Call Type on its own Calls source. mktIsLeadFlag() below handles this
+// exactly the same way Best Plumber's does when hasLeadCol is true, so no
+// custom logic was needed here beyond a straight port.
+// ══════════════════════════════════════════════════════════════════════════
+const MKT_CONFIG = {
+  sasUrlCalls: "https://coolbreeze.blob.core.windows.net/coolbreeze/Calls%20Service%20Titan.xlsx?sp=r&st=2026-09-12T14:21:33Z&se=2030-09-12T22:36:33Z&spr=https&sv=2026-02-06&sr=b&sig=xSqP%2FnKRETqi0Gu57l81AZ%2FRy0fzoNv1%2BLun%2Bu0yGi4%3D",
+  sasUrlWebBookings: "https://coolbreeze.blob.core.windows.net/coolbreeze/Web%20Booking%20Service%20Titan.xlsx?sp=r&st=2026-09-12T15:43:55Z&se=2030-09-12T23:58:55Z&spr=https&sv=2026-02-06&sr=b&sig=oymnzogk%2Fk9Pj%2BgvXaqgY0pPQi66RF4YRaHxBVAUnm0%3D",
+};
+const REPORT_KEY_CALLS = 'callsServiceTitan';
+const REPORT_KEY_WEBBOOKINGS = 'webBookingServiceTitan';
+
+let ALL_CALLS = [];
+let callsDataReady = false;
+let ALL_WEBBOOKINGS = [];
+let webBookingsDataReady = false;
+let mktActivePage = 'overview';
+let mktSource = 'all'; // Lead Detail table source filter: all | calls | webbookings | manual
+
+/* A call counts as a lead when the "Lead" column from the Calls export is
+   truthy (boolean TRUE, or "TRUE"/"Yes"/"1", case-insensitive) — ported
+   verbatim from Best Plumber's mktIsLeadFlag(). Falls back to Call Type
+   Booked/Unbooked only if the sheet has no Lead column at all; this export
+   does have one, so that fallback branch never actually runs here — see the
+   file-level note above on why the Lead column is trusted as-is. */
+function mktIsLeadFlag(leadRaw, hasLeadCol, callType){
+  if(hasLeadCol){
+    if(leadRaw===true) return true;
+    if(leadRaw===false||leadRaw==null) return false;
+    const s = String(leadRaw).trim().toLowerCase();
+    return s==='true' || s==='1' || s==='yes' || s==='y';
+  }
+  return callType==='Booked' || callType==='Unbooked';
+}
+
+// Call Analysis page helpers — ported verbatim from Best Plumber's Marketing tab.
+const MKT_CALL_HOUR_LABELS = Array.from({length:24},(_,h)=>{ const ap=h<12?'a':'p'; let hh=h%12; if(hh===0)hh=12; return hh+ap; });
+const MKT_CALL_BIZ_START_HOUR = 8, MKT_CALL_BIZ_END_HOUR = 17;
+function mktParseCallClockTime(raw){
+  if(raw==null || raw==='') return null;
+  if(raw instanceof Date){
+    if(isNaN(raw.getTime())) return null;
+    return { h: raw.getHours(), m: raw.getMinutes() };
+  }
+  if(typeof raw==='number'){
+    let frac = raw; if(frac>=1) frac = frac - Math.floor(frac);
+    if(frac<0) return null;
+    const totalMin = Math.round(frac*24*60);
+    return { h: Math.floor(totalMin/60)%24, m: totalMin%60 };
+  }
+  const s = String(raw).trim();
+  if(!s) return null;
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*([AaPp]\.?[Mm]\.?)?$/);
+  if(!m) return null;
+  let h = parseInt(m[1],10); const min = parseInt(m[2],10);
+  if(isNaN(h) || isNaN(min)) return null;
+  const ap = m[3];
+  if(ap){ const isPM = /p/i.test(ap); if(h===12) h = isPM?12:0; else if(isPM) h += 12; }
+  return { h: h%24, m: min };
+}
+function mktParseCallLengthMinutes(raw){
+  if(raw==null || raw==='') return 0;
+  if(typeof raw==='number'){
+    if(raw>0 && raw<1) return raw*24*60;
+    return raw;
+  }
+  const s = String(raw).trim();
+  if(!s) return 0;
+  const parts = s.split(':');
+  if(parts.length>=2 && parts.every(p=>/^\d+$/.test(p.trim()))){
+    const nums = parts.map(p=>parseInt(p,10));
+    if(nums.length>=3){ const h=nums[0], mn=nums[1], sc=nums[2]; return h*60+mn+sc/60; }
+    const mn=nums[0], sc=nums[1]; return mn+sc/60;
+  }
+  const num = parseFloat(s.replace(/[^\d.]/g,''));
+  return isNaN(num) ? 0 : num;
+}
+function mktIsCallBusinessHours(clockTime, weekend){
+  if(!clockTime) return null;
+  if(weekend) return false;
+  return clockTime.h>=MKT_CALL_BIZ_START_HOUR && clockTime.h<MKT_CALL_BIZ_END_HOUR;
+}
+function mktFmtCallMinutes(mins){
+  const m = Math.round(mins||0);
+  if(m<60) return m.toLocaleString()+' min';
+  const h = Math.floor(m/60), rem = m%60;
+  return h.toLocaleString()+'h '+rem+'m';
+}
+function mktReasonBucket(raw){ return String(raw||'').trim() || 'Not specified'; }
+function mktDayRange(from,to){
+  const out = [];
+  if(!from || !to) return out;
+  let cur = new Date(from+'T00:00:00Z');
+  const end = new Date(to+'T00:00:00Z');
+  if(isNaN(cur) || isNaN(end)) return out;
+  while(cur<=end){
+    out.push(cur.toISOString().slice(0,10));
+    cur = new Date(cur.getTime()+86400000);
+  }
+  return out;
+}
+function mktDayLabel(d8){ const p=d8.split('-'); return p[1]+'/'+p[2]; }
+function stCallLink(id){ return id?`<a class="st-link" href="https://go.servicetitan.com/Call/CallRecording/${encodeURIComponent(id)}" target="_blank" rel="noopener">▶ Listen</a>`:'—'; }
+function mktCurrentRange(){
+  const fromEl=document.getElementById('mktDateFrom'), toEl=document.getElementById('mktDateTo');
+  const from=(fromEl&&fromEl.value)||monthStartISO();
+  const to=(toEl&&toEl.value)||todayISO();
+  return { from, to };
+}
+
+/* Parses the Calls Service Titan export into row objects. Ported from Best
+   Plumber's parseCallsRows(), using Coolbreeze's own sd()/isoDay() date
+   helpers in place of Best Plumber's toISO(). Blank Business Unit / Campaign
+   Category are bucketed into a real, filterable value ("No Business Unit" /
+   "Uncategorized") rather than left blank — Coolbreeze has no Campaign
+   Summary VLOOKUP file to backfill these from (unlike Best Plumber), so
+   there's no better source to resolve them against yet. */
+function parseCallsRows(rows){
+  if(!rows||rows.length<2) return [];
+  const headers = rows[0].map(h=>String(h||'').trim());
+  const C = {}; headers.forEach((h,i)=>{ if(h) C[h]=i; });
+  function col(...names){ for(const n of names){ if(C[n]!=null) return C[n]; } return -1; }
+  const COL = {
+    id: col('ID'),
+    date: col('Call Date'),
+    name: col('Name'),
+    campaign: col('Call Campaign'),
+    direction: col('Direction'),
+    callLength: col('Call Length'),
+    callReason: col('Call Reason'),
+    campaignCategory: col('Campaign Category'),
+    numberDialed: col('Number Dialed'),
+    callerPhone: col('Caller Phone Number'),
+    callTime: col('Call Time'),
+    callMemo: col('Call Memo'),
+    callType: col('Call Type'),
+    lead: col('Lead'),
+    jobNumber: col('Job Number'),
+    jobStatus: col('Job Status'),
+    bizUnit: col('Job Business Unit'),
+    customerName: col('Customer Name'),
+    customerCity: col('Customer City'),
+  };
+  const out = [];
+  for(const r of rows.slice(1)){
+    const id = COL.id>=0 ? r[COL.id] : null;
+    if(id==null || id==='') continue;
+    const callType = COL.callType>=0 ? String(r[COL.callType]||'').trim() : '';
+    const dateRaw = COL.date>=0 ? r[COL.date] : null;
+    const isLeadFlag = mktIsLeadFlag(COL.lead>=0 ? r[COL.lead] : null, COL.lead>=0, callType);
+    const d8 = isoDay(sd(dateRaw));
+    const dow = d8 ? new Date(d8+'T00:00:00Z').getUTCDay() : null;
+    const weekend = dow===0 || dow===6;
+    const clockTime = mktParseCallClockTime(COL.callTime>=0 ? r[COL.callTime] : null);
+    out.push({
+      id: String(id),
+      d8,
+      name: COL.name>=0 ? String(r[COL.name]||'') : '',
+      campaign: COL.campaign>=0 ? String(r[COL.campaign]||'') : '',
+      direction: COL.direction>=0 ? String(r[COL.direction]||'') : '',
+      callLength: COL.callLength>=0 ? String(r[COL.callLength]||'') : '',
+      callReason: COL.callReason>=0 ? String(r[COL.callReason]||'') : '',
+      callMemo: COL.callMemo>=0 ? String(r[COL.callMemo]||'') : '',
+      phone: COL.callerPhone>=0 ? String(r[COL.callerPhone]||'') : (COL.numberDialed>=0 ? String(r[COL.numberDialed]||'') : ''),
+      campaignCategory: (COL.campaignCategory>=0 ? String(r[COL.campaignCategory]||'').trim() : '') || 'Uncategorized',
+      callTime: COL.callTime>=0 ? String(r[COL.callTime]||'') : '',
+      callType: callType,
+      isLead: isLeadFlag,
+      isUnqualified: !isLeadFlag && callType==='Excused',
+      excused: callType==='Excused',
+      jobNumber: COL.jobNumber>=0 ? String(r[COL.jobNumber]||'') : '',
+      jobStatus: COL.jobStatus>=0 ? String(r[COL.jobStatus]||'') : '',
+      bizUnit: (COL.bizUnit>=0 ? String(r[COL.bizUnit]||'').trim() : '') || 'No Business Unit',
+      customerName: COL.customerName>=0 ? String(r[COL.customerName]||'') : '',
+      customerCity: COL.customerCity>=0 ? String(r[COL.customerCity]||'') : '',
+      weekend,
+      hourOfDay: clockTime ? clockTime.h : null,
+      bizHours: mktIsCallBusinessHours(clockTime, weekend),
+      lengthMin: mktParseCallLengthMinutes(COL.callLength>=0 ? r[COL.callLength] : null),
+    });
+  }
+  return out;
+}
+
+/* Web Booking Dismiss Reason taxonomy — verified against the real Cool
+   Breeze export (2026-09-12) and confirmed with Ariel; Coolbreeze uses its
+   own OFC/SVC/MBR-coded reasons, not Best Plumber's plain-English list, so
+   none of Best Plumber's own excluded-reason strings apply here.
+   EXCLUDED = never a real lead (spam, internal/employee, resolved without
+   needing a job) — these count toward neither leads nor Unbooked.
+   ALREADY_BOOKED = the submission says "Dismissed" but the reason text
+   says the job got booked through another channel (e.g. over the phone) —
+   still a genuine lead, but counts as Booked, not Unbooked. */
+const WEB_BOOKING_EXCLUDED_DISMISS_REASONS = new Set([
+  'OFC spam / sales call','OFC Cool Breeze employee','OFC employment inquiry',
+  'OFC wrong number','SVC unqualified - fixed issue over phone',
+]);
+const WEB_BOOKING_ALREADY_BOOKED_DISMISS_REASONS = new Set([
+  'SVC BOOKED','SVC unqualified - booked already',
+]);
+
+/* Parses the Web Booking Service Titan export. Web Bookings carry no
+   Campaign Category column of their own (unlike Calls) — bucketed to
+   "Uncategorized" the same way a blank Calls category is, rather than left
+   to a VLOOKUP against a Campaign Summary file Coolbreeze doesn't have yet.
+   Verified against the real file (2026-09-12, 89 rows): columns match
+   exactly except this export has no "Job Status" column at all (unlike
+   Best Plumber's) — col()'s unmapped-column console.warn surfaces that
+   harmlessly, and Web Booking rows simply never contribute to the
+   Cancelled count anywhere as a result (nothing to report, not a bug). */
+function parseWebBookingRows(rows){
+  if(!rows||rows.length<2) return [];
+  const headers = rows[0].map(h=>String(h||'').trim());
+  const C = {}; headers.forEach((h,i)=>{ if(h) C[h]=i; });
+  function col(...names){ for(const n of names){ if(C[n]!=null) return C[n]; } return -1; }
+  const COL = {
+    id: col('ExternalId','External Id','ID'),
+    date: col('Submission Time','Submitted','Date'),
+    customerName: col('Customer Name'),
+    campaign: col('Marketing Booking Campaign','Booking Campaign'),
+    jobCampaign: col('Job Campaign'),
+    source: col('Source'),
+    status: col('Status'),
+    dismissReason: col('Dismiss Reason'),
+    bizUnit: col('Business Unit'),
+    city: col('City'),
+    jobNumber: col('Job Number'),
+    jobStatus: col('Job Status'),
+  };
+  const missing=Object.entries(COL).filter(([k,v])=>v===-1).map(([k])=>k);
+  if(missing.length) console.warn('[Marketing/WebBookings] Unmapped columns:', missing, '— detected headers:', headers);
+  const out = [];
+  for(const r of rows.slice(1)){
+    const id = COL.id>=0 ? r[COL.id] : null;
+    if(id==null || id==='') continue;
+    const dismissReason = COL.dismissReason>=0 ? String(r[COL.dismissReason]||'').trim() : '';
+    const dateRaw = COL.date>=0 ? r[COL.date] : null;
+    const status = COL.status>=0 ? String(r[COL.status]||'') : '';
+    const isLead = !WEB_BOOKING_EXCLUDED_DISMISS_REASONS.has(dismissReason);
+    out.push({
+      id: String(id),
+      d8: isoDay(sd(dateRaw)),
+      customerName: COL.customerName>=0 ? String(r[COL.customerName]||'') : '',
+      campaign: (COL.campaign>=0 && r[COL.campaign]) ? String(r[COL.campaign]) : (COL.jobCampaign>=0 ? String(r[COL.jobCampaign]||'') : ''),
+      campaignCategory: 'Uncategorized',
+      source: COL.source>=0 ? String(r[COL.source]||'') : '',
+      status: status,
+      dismissReason: dismissReason,
+      isLead: isLead,
+      // Genuine lead AND genuinely dismissed AND not one of the "actually
+      // got booked elsewhere" reasons — the signal every Unbooked-related
+      // metric below reads, instead of the raw Status field directly. A
+      // junk/excluded-reason row is never counted toward Unbooked either
+      // (it was never a lead in the first place).
+      unbooked: isLead && status==='Dismissed' && !WEB_BOOKING_ALREADY_BOOKED_DISMISS_REASONS.has(dismissReason),
+      bizUnit: (COL.bizUnit>=0 ? String(r[COL.bizUnit]||'').trim() : '') || 'No Business Unit',
+      city: COL.city>=0 ? String(r[COL.city]||'') : '',
+      jobNumber: COL.jobNumber>=0 ? String(r[COL.jobNumber]||'') : '',
+      jobStatus: COL.jobStatus>=0 ? String(r[COL.jobStatus]||'') : '',
+    });
+  }
+  return out;
+}
+
+/* Manual Calls, per user: leads pulled straight from the Jobs workbook
+   (ALL_JOBS — already live in Coolbreeze from the Jobs tab, so no separate
+   file is needed for this), not a Calls/Web Booking blob — jobs the CSR
+   logged directly rather than ones tracked to a call or web form. Criteria
+   (per user, 2026-09-12, corrected same day — the actual Job Type value is
+   "z No Job", not "No Job"; the "z" prefix is a ServiceTitan convention to
+   sort it to the bottom of dropdown lists): Call Campaign is empty AND
+   Business Unit is not "Construction" AND Job Type is not "z No Job".
+   Business Unit/Job Type are compared case-insensitively so a stray casing
+   difference in the export doesn't silently let a row slip through (or get
+   excluded) the filter. Scoped by the job's Created Date (cd8) — the
+   closest analog to "when the lead came in" for a record with no
+   call/submission timestamp of its own. Single source of truth used by
+   every Manual-Calls-derived metric below. */
+function mktIsManualCallJob(j){
+  if(!j.cd8) return false;
+  if(String(j.callCampaign||'').trim()) return false;
+  if(String(j.b||'').trim().toLowerCase()==='construction') return false;
+  if(String(j.jt||'').trim().toLowerCase()==='z no job') return false;
+  return true;
+}
+
+/* Extend the generic multiselect system (MS_OPTS/MS_SEL/MS_LABEL/MS_APPLY,
+   built for the Jobs tab and already reused by Estimates) with the
+   Marketing tab's own filter keys, instead of porting Best Plumber's
+   bespoke per-field functions (mktCategoryMatch, mktBizMatch, etc). */
+MS_OPTS.mktCat=[]; MS_OPTS.mktBiz=[]; MS_OPTS.mktCallType=[]; MS_OPTS.mktReason=[];
+MS_SEL.mktCat=new Set(); MS_SEL.mktBiz=new Set(); MS_SEL.mktCallType=new Set(); MS_SEL.mktReason=new Set();
+MS_LABEL.mktCat='All Categories'; MS_LABEL.mktBiz='All Business Units'; MS_LABEL.mktCallType='All Call Types'; MS_LABEL.mktReason='All Reasons';
+MS_APPLY.mktCat=()=>applyMktFilters();
+MS_APPLY.mktBiz=()=>applyMktFilters();
+MS_APPLY.mktCallType=()=>applyMktFilters();
+MS_APPLY.mktReason=()=>applyMktFilters();
+
+function mktCategoryMatch(c){ return MS_SEL.mktCat.size===0 || MS_SEL.mktCat.has(c.campaignCategory); }
+function mktBizMatch(bizUnit){ return MS_SEL.mktBiz.size===0 || MS_SEL.mktBiz.has(bizUnit); }
+function mktCallTypeMatch(callType){ return MS_SEL.mktCallType.size===0 || MS_SEL.mktCallType.has(callType); }
+function mktReasonMatch(reason){ return MS_SEL.mktReason.size===0 || MS_SEL.mktReason.has(mktReasonBucket(reason)); }
+function buildMktFilterOptions(){
+  const catSet=new Set(ALL_CALLS.map(c=>c.campaignCategory));
+  const bizSet=new Set(ALL_CALLS.map(c=>c.bizUnit));
+  ALL_WEBBOOKINGS.forEach(c=>{ catSet.add(c.campaignCategory); bizSet.add(c.bizUnit); });
+  ALL_JOBS.filter(mktIsManualCallJob).forEach(j=>{ catSet.add(j.cat||'Uncategorized'); bizSet.add(j.b); });
+  MS_OPTS.mktCat=[...catSet].sort();
+  MS_OPTS.mktBiz=[...bizSet].sort();
+  MS_OPTS.mktCallType=[...new Set(ALL_CALLS.map(c=>c.callType).filter(Boolean))].sort();
+  MS_OPTS.mktReason=[...new Set(ALL_CALLS.map(c=>mktReasonBucket(c.callReason)))].sort();
+  ['mktCat','mktBiz','mktCallType','mktReason'].forEach(k=>{ renderMSItems(k); updateMSBtn(k); });
+}
+
+// Shared Overview-page counters — Category/Business Unit/Call Type filters only
+// (the Call Analysis page's own Lead/Excused/Reason/Hours filters don't apply here).
+// Call Type is a Calls-only attribute, so it's applied to Calls counts only.
+function countLeadCalls(from,to){
+  return ALL_CALLS.filter(c=>c.isLead && c.d8 && c.d8>=from && c.d8<=to && mktCategoryMatch(c) && mktBizMatch(c.bizUnit) && mktCallTypeMatch(c.callType)).length;
+}
+function countUnqualifiedLeads(from,to){
+  return ALL_CALLS.filter(c=>c.isUnqualified && c.d8 && c.d8>=from && c.d8<=to && mktCategoryMatch(c) && mktBizMatch(c.bizUnit) && mktCallTypeMatch(c.callType)).length;
+}
+function countUnbookedCalls(from,to){
+  return ALL_CALLS.filter(c=>c.callType==='Unbooked' && c.d8 && c.d8>=from && c.d8<=to && mktCategoryMatch(c) && mktBizMatch(c.bizUnit) && mktCallTypeMatch(c.callType)).length;
+}
+function countWebBookingLeads(from,to){
+  return ALL_WEBBOOKINGS.filter(c=>c.isLead && c.d8 && c.d8>=from && c.d8<=to && mktCategoryMatch(c) && mktBizMatch(c.bizUnit)).length;
+}
+/* Per the same lead-quality bar used everywhere else on this tab: only
+   genuinely-unbooked Web Bookings count toward Unbooked — c.unbooked is
+   already false for junk-reason dismissals (never real leads) and for the
+   "actually got booked elsewhere" reasons (SVC BOOKED / SVC unqualified -
+   booked already), so it shouldn't inflate "marketing generated it but we
+   lost it". */
+function countDismissedWebBookings(from,to){
+  return ALL_WEBBOOKINGS.filter(c=>c.unbooked && c.d8 && c.d8>=from && c.d8<=to && mktCategoryMatch(c) && mktBizMatch(c.bizUnit)).length;
+}
+// Unbooked = Calls Unbooked + Web Booking Dismissed (genuine leads only). Manual
+// Calls have no "unbooked" analog — a Jobs-workbook row is, by definition, an
+// actual created job.
+function countUnbookedTotal(from,to){
+  return countUnbookedCalls(from,to) + countDismissedWebBookings(from,to);
+}
+function countManualCalls(from,to){
+  return ALL_JOBS.filter(j=>mktIsManualCallJob(j) && j.cd8 && j.cd8>=from && j.cd8<=to && mktBizMatch(j.b) && mktCategoryMatch({campaignCategory:j.cat||'Uncategorized'})).length;
+}
+/* Cancellations, per lead source: Calls/Web Bookings carry their matched
+   ServiceTitan job's Status in jobStatus; a Manual Call *is* a Jobs-workbook
+   row, so its own status field is used directly. Each source still has to
+   pass its own lead criteria first — this only narrows that population down
+   to the canceled ones. */
+function countCanceledLeads(from,to){
+  const callsCanceled = ALL_CALLS.filter(c=>c.isLead && c.d8 && c.d8>=from && c.d8<=to && mktCategoryMatch(c) && mktBizMatch(c.bizUnit) && mktCallTypeMatch(c.callType) && isCanceledJob(c.jobStatus)).length;
+  const wbCanceled = ALL_WEBBOOKINGS.filter(c=>c.isLead && c.d8 && c.d8>=from && c.d8<=to && mktCategoryMatch(c) && mktBizMatch(c.bizUnit) && isCanceledJob(c.jobStatus)).length;
+  const manualCanceled = ALL_JOBS.filter(j=>mktIsManualCallJob(j) && j.cd8 && j.cd8>=from && j.cd8<=to && mktBizMatch(j.b) && mktCategoryMatch({campaignCategory:j.cat||'Uncategorized'}) && isCanceledJob(j.status)).length;
+  return callsCanceled + wbCanceled + manualCanceled;
+}
+function mktOverviewRows(){
+  const tm=mktCurrentRange();
+  return ALL_CALLS.filter(c=>c.d8 && c.d8>=tm.from && c.d8<=tm.to && mktCategoryMatch(c) && mktBizMatch(c.bizUnit) && mktCallTypeMatch(c.callType));
+}
+
+function updateOverviewKPIs(){
+  const tm=mktCurrentRange();
+  const leadCalls=countLeadCalls(tm.from,tm.to);
+  const unqual=countUnqualifiedLeads(tm.from,tm.to);
+  const unbooked=countUnbookedTotal(tm.from,tm.to);
+  const setTxt=(id,val)=>{ const el=document.getElementById(id); if(el) el.textContent=val; };
+  setTxt('mk-calls', leadCalls.toLocaleString());
+  setTxt('mk-unqual', unqual.toLocaleString());
+  setTxt('mk-unbooked', unbooked.toLocaleString());
+  const finfo=document.getElementById('mkt-finfo');
+  // Total Leads/Opportunities/Web Forms/Manual Calls need Web Bookings too —
+  // only computed once that source has loaded (mirrors callsDataReady-only
+  // gating everywhere else: a webBookingsDataReady===false render would
+  // silently show "leadCalls-only" numbers under the "Total Leads" label).
+  if(webBookingsDataReady){
+    const webLeads=countWebBookingLeads(tm.from,tm.to);
+    const manualLeads=countManualCalls(tm.from,tm.to);
+    const totalLeads=leadCalls+webLeads+manualLeads;
+    const canceled=countCanceledLeads(tm.from,tm.to);
+    const totalOpps=totalLeads-unbooked-canceled;
+    setTxt('mk-webforms', webLeads.toLocaleString());
+    setTxt('mk-manualcalls', manualLeads.toLocaleString());
+    setTxt('mk-leads', totalLeads.toLocaleString());
+    setTxt('mk-opps', totalOpps.toLocaleString());
+    if(finfo) finfo.textContent = totalLeads.toLocaleString()+' total leads ('+leadCalls.toLocaleString()+' calls + '+webLeads.toLocaleString()+' web bookings + '+manualLeads.toLocaleString()+' manual) · '+tm.from+' → '+tm.to;
+  }else{
+    if(finfo) finfo.textContent = leadCalls.toLocaleString()+' lead calls · '+tm.from+' → '+tm.to;
+  }
+}
+
+/* Business Unit breakdown: Leads/Opportunities/Unbooked/Cancelled are now
+   summed across Calls + Web Bookings + Manual Calls (Total Spend still
+   needs an ad-spend source). Opportunities mirrors the Total Opportunities
+   KPI's own formula (Leads − Unbooked − Cancelled), computed per unit. */
+function mktBizUnitLeadRows(from,to){
+  const out=[];
+  ALL_CALLS.forEach(c=>{
+    if(!(c.isLead && c.d8 && c.d8>=from && c.d8<=to && mktCategoryMatch(c) && mktBizMatch(c.bizUnit) && mktCallTypeMatch(c.callType))) return;
+    out.push({ bizUnit:c.bizUnit, unbooked:c.callType==='Unbooked', canceled:isCanceledJob(c.jobStatus) });
+  });
+  if(webBookingsDataReady){
+    ALL_WEBBOOKINGS.forEach(c=>{
+      if(!(c.isLead && c.d8 && c.d8>=from && c.d8<=to && mktCategoryMatch(c) && mktBizMatch(c.bizUnit))) return;
+      out.push({ bizUnit:c.bizUnit, unbooked:c.unbooked, canceled:isCanceledJob(c.jobStatus) });
+    });
+    ALL_JOBS.forEach(j=>{
+      if(!(mktIsManualCallJob(j) && j.cd8 && j.cd8>=from && j.cd8<=to && mktBizMatch(j.b) && mktCategoryMatch({campaignCategory:j.cat||'Uncategorized'}))) return;
+      out.push({ bizUnit:j.b, unbooked:false, canceled:isCanceledJob(j.status) });
+    });
+  }
+  return out;
+}
+function renderBizUnitTable(){
+  const body=document.getElementById('mktBizUnitBody');
+  if(!body) return;
+  if(!callsDataReady){ body.innerHTML='<tr><td colspan="6" class="mkt-placeholder">Loading…</td></tr>'; return; }
+  const tm=mktCurrentRange();
+  const leadRows=mktBizUnitLeadRows(tm.from,tm.to);
+  const byUnit=new Map();
+  leadRows.forEach(r=>{
+    if(!byUnit.has(r.bizUnit)) byUnit.set(r.bizUnit,{leads:0,unbooked:0,canceled:0});
+    const o=byUnit.get(r.bizUnit);
+    o.leads++;
+    if(r.unbooked) o.unbooked++;
+    if(r.canceled) o.canceled++;
+  });
+  const units=[...byUnit.entries()].sort((a,b)=>b[1].leads-a[1].leads);
+  if(!units.length){ body.innerHTML='<tr><td colspan="6" class="mkt-placeholder">No leads for any Business Unit in the selected date range</td></tr>'; return; }
+  body.innerHTML=units.map(([name,o])=>{
+    const opps=webBookingsDataReady ? Math.max(0,o.leads-o.unbooked-o.canceled).toLocaleString() : '<span class="mkt-placeholder-cell">—</span>';
+    const canceled=webBookingsDataReady ? o.canceled.toLocaleString() : '<span class="mkt-placeholder-cell">—</span>';
+    return `<tr><td>${esc(name)}</td><td>${o.leads.toLocaleString()}</td><td>${opps}</td><td>${o.unbooked.toLocaleString()}</td><td>${canceled}</td><td class="mkt-placeholder-cell">—</td></tr>`;
+  }).join('');
+}
+
+/* ROI by Category: Leads/Booked/Unbooked/Booking Rate now summed across
+   Calls + Web Bookings + Manual Calls, grouped by Campaign Category (Calls'
+   own category; Web Bookings bucket to "Uncategorized" — they carry no
+   category column of their own; Manual Calls use the Jobs workbook's own
+   Campaign Category). Booked/Unbooked mirror the same binary each source
+   already uses elsewhere on this tab: Calls Call Type Booked/Unbooked, Web
+   Booking Status Dismissed(genuine lead)=Unbooked/anything else=Booked, and
+   every qualifying Manual Call counts as Booked (a Jobs-workbook row is, by
+   definition, an actual created job). Spend/Sales/Jobs Completed/Completed
+   Revenue/ROI/Cost-per-Lead/Impressions/Clicks still need Spend/Estimates
+   sources and stay blank until connected. */
+function mktRoiRows(){
+  const tm=mktCurrentRange();
+  const byCat=new Map();
+  function bump(cat,leadDelta,bookedDelta,unbookedDelta){
+    if(!byCat.has(cat)) byCat.set(cat,{leads:0,booked:0,unbooked:0});
+    const o=byCat.get(cat);
+    o.leads+=leadDelta; o.booked+=bookedDelta; o.unbooked+=unbookedDelta;
+  }
+  mktOverviewRows().forEach(c=>{
+    bump(c.campaignCategory, c.isLead?1:0, c.callType==='Booked'?1:0, c.callType==='Unbooked'?1:0);
+  });
+  if(webBookingsDataReady){
+    ALL_WEBBOOKINGS.forEach(c=>{
+      if(!(c.d8 && c.d8>=tm.from && c.d8<=tm.to && mktCategoryMatch(c) && mktBizMatch(c.bizUnit))) return;
+      if(!c.isLead) return;
+      const unbooked = c.unbooked;
+      bump(c.campaignCategory, 1, unbooked?0:1, unbooked?1:0);
+    });
+    ALL_JOBS.forEach(j=>{
+      if(!(mktIsManualCallJob(j) && j.cd8 && j.cd8>=tm.from && j.cd8<=tm.to && mktBizMatch(j.b) && mktCategoryMatch({campaignCategory:j.cat||'Uncategorized'}))) return;
+      bump(j.cat||'Uncategorized', 1, 1, 0);
+    });
+  }
+  return [...byCat.entries()].map(([category,o])=>({
+    category, leads:o.leads, booked:o.booked, unbooked:o.unbooked,
+    bookingRate: (o.booked+o.unbooked)>0 ? o.booked/(o.booked+o.unbooked) : null,
+  })).filter(r=>r.leads>0).sort((a,b)=>b.leads-a.leads);
+}
+function renderMktRoiTable(){
+  const body=document.getElementById('mktRoiBody'), foot=document.getElementById('mktRoiFoot'), countEl=document.getElementById('mkt-roi-count');
+  if(!body) return;
+  if(!callsDataReady){ body.innerHTML='<tr><td colspan="14" class="mkt-placeholder">Loading…</td></tr>'; if(foot)foot.innerHTML=''; return; }
+  const rows=mktRoiRows();
+  if(countEl) countEl.textContent=rows.length+' categor'+(rows.length===1?'y':'ies');
+  if(!rows.length){
+    body.innerHTML='<tr><td colspan="14" style="text-align:center;color:var(--gray-500);padding:20px">No calls in the selected date range and filters</td></tr>';
+    if(foot) foot.innerHTML='';
+    return;
+  }
+  const pct=r=>r.bookingRate==null?'—':Math.round(r.bookingRate*100)+'%';
+  body.innerHTML=rows.map(r=>
+    `<tr><td style="font-weight:700">${esc(r.category)}</td><td class="mkt-placeholder-cell">—</td><td class="mkt-placeholder-cell">—</td><td class="mkt-placeholder-cell">—</td><td class="mkt-placeholder-cell">—</td><td class="mkt-placeholder-cell">—</td><td class="mkt-placeholder-cell">—</td>`
+    +`<td>${r.leads.toLocaleString()}</td><td>${r.booked.toLocaleString()}</td><td>${r.unbooked.toLocaleString()}</td><td>${pct(r)}</td><td class="mkt-placeholder-cell">—</td><td class="mkt-placeholder-cell">—</td><td class="mkt-placeholder-cell">—</td></tr>`
+  ).join('');
+  const tot={leads:0,booked:0,unbooked:0};
+  rows.forEach(r=>{ tot.leads+=r.leads; tot.booked+=r.booked; tot.unbooked+=r.unbooked; });
+  const totRate=(tot.booked+tot.unbooked)>0 ? tot.booked/(tot.booked+tot.unbooked) : null;
+  if(foot) foot.innerHTML=`<tr style="font-weight:700;background:var(--gray-100)"><td>TOTAL</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>`
+    +`<td>${tot.leads.toLocaleString()}</td><td>${tot.booked.toLocaleString()}</td><td>${tot.unbooked.toLocaleString()}</td><td>${totRate==null?'—':Math.round(totRate*100)+'%'}</td><td>—</td><td>—</td><td>—</td></tr>`;
+}
+function exportMktRoiXLSX(){
+  const rows=mktRoiRows();
+  exportJobsXLSX('Coolbreeze_Marketing_ROI_by_Category_'+todayISO()+'.xlsx',
+    ['Category','Leads','Booked','Unbooked','Booking Rate','Spend','Sales (Sold)','Jobs Completed','Completed Revenue','ROI (X)','ROI %','Cost / Lead','Impressions','Clicks'],
+    rows.map(r=>[r.category, r.leads, r.booked, r.unbooked, r.bookingRate==null?'':Math.round(r.bookingRate*1000)/1000, '','','','','','','','','']));
+}
+
+function renderChartPlaceholder(canvasId, label){
+  const canvas = document.getElementById(canvasId);
+  if(!canvas) return;
+  const wrap = canvas.parentElement;
+  canvas.style.display = 'none';
+  if(wrap && !wrap.querySelector('.mkt-placeholder')){
+    const div = document.createElement('div');
+    div.className = 'mkt-placeholder';
+    div.textContent = label;
+    wrap.appendChild(div);
+  }
+}
+
+const MKT_CHARTS = {};
+function destroyMkt(key){ if(MKT_CHARTS[key]){ MKT_CHARTS[key].destroy(); delete MKT_CHARTS[key]; } }
+const CALL_ANALYSIS_PALETTE = ['#2E8B57','#3B6FD1','#E8974A','#B23225','#6A3FA0','#D9A441','#4FC3E8','#8F0D06','#2E9BD6','#E91E8C'];
+
+/* Number of Leads by Date and Call Status: one row per day in [from,to],
+   split into the same three buckets that make up the Total Opportunities
+   formula — Canceled and Unbooked are counted directly (already summed
+   across Calls + Web Bookings + Manual Calls), and Opportunity is whatever
+   of that day's Total Leads is left over, so the three stacked series
+   always sum to that day's Total Leads and never disagree with the Total
+   Opportunities KPI card. Only renders once Web Bookings has loaded, same
+   gating as the Total Leads KPI itself. */
+function computeLeadsByDate(from,to){
+  const out=[];
+  mktDayRange(from,to).forEach(iso=>{
+    const total=countLeadCalls(iso,iso)+countWebBookingLeads(iso,iso)+countManualCalls(iso,iso);
+    const unbooked=countUnbookedTotal(iso,iso);
+    const canceled=countCanceledLeads(iso,iso);
+    const opportunity=Math.max(0,total-unbooked-canceled);
+    out.push({ d8:iso, label:mktDayLabel(iso), canceled, opportunity, unbooked });
+  });
+  return out;
+}
+// Draws each day's total (sum of the three stacked segments) just above the
+// top of its bar.
+const leadsTotalLabelPlugin = {
+  id:'leadsTotalLabelPlugin',
+  afterDatasetsDraw(chart){
+    const {ctx,data}=chart;
+    ctx.save();
+    ctx.font='600 11px system-ui, -apple-system, Segoe UI, sans-serif';
+    ctx.fillStyle='#1F3B73';
+    ctx.textAlign='center';
+    ctx.textBaseline='bottom';
+    for(let i=0;i<data.labels.length;i++){
+      let total=0, topY=null, anyX=null;
+      for(let d=0; d<data.datasets.length; d++){
+        const v=data.datasets[d].data[i]||0;
+        total+=v;
+        const meta=chart.getDatasetMeta(d);
+        const el=meta.data[i];
+        if(!el) continue;
+        anyX=el.x;
+        if(v>0) topY=el.y;
+      }
+      if(total<=0 || topY===null) continue;
+      ctx.fillText(String(total), anyX, topY-4);
+    }
+    ctx.restore();
+  }
+};
+function renderLeadsByDateChart(){
+  if(!webBookingsDataReady) return;
+  destroyMkt('leadsByDate');
+  const ctx=document.getElementById('mktLeadsByDateChart');
+  if(!ctx) return;
+  const tm=mktCurrentRange();
+  const rows=computeLeadsByDate(tm.from,tm.to);
+  MKT_CHARTS.leadsByDate=new Chart(ctx,{
+    type:'bar',
+    plugins:[leadsTotalLabelPlugin],
+    data:{
+      labels: rows.map(d=>d.label),
+      datasets:[
+        {label:'Canceled', data:rows.map(d=>d.canceled), backgroundColor:'#C0392B', borderColor:'#fff', borderWidth:1, borderSkipped:false, stack:'s'},
+        {label:'Opportunity', data:rows.map(d=>d.opportunity), backgroundColor:'#3B9AE1', borderColor:'#fff', borderWidth:1, borderSkipped:false, stack:'s'},
+        {label:'Unbooked', data:rows.map(d=>d.unbooked), backgroundColor:'#0F3D7A', borderColor:'#fff', borderWidth:1, borderSkipped:false, stack:'s'},
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      layout:{padding:{top:18}},
+      plugins:{
+        legend:{position:'bottom'},
+        tooltip:{ mode:'index', intersect:false, filter:item=>item.parsed.y>0, callbacks:{ footer:items=>'Total: '+items.reduce((a,it)=>a+it.parsed.y,0) } }
+      },
+      scales:{x:{stacked:true}, y:{stacked:true, beginAtZero:true}}
+    }
+  });
+}
+
+/* Daily Leads per Channel: buckets every lead (Calls + Web Bookings +
+   Manual Calls, once Web Bookings has loaded) by day and Campaign Category
+   — same population as the Number of Leads by Date chart / Total Leads
+   KPI. */
+function computeLeadsChannelSeries(from,to){
+  const dayKeys=mktDayRange(from,to);
+  const byDay={}; dayKeys.forEach(k=>{ byDay[k]={}; });
+  const cats=new Set();
+  function bucket(d8,cat){
+    if(!(d8 in byDay)) return;
+    cats.add(cat);
+    byDay[d8][cat]=(byDay[d8][cat]||0)+1;
+  }
+  mktOverviewRows().filter(c=>c.isLead).forEach(c=>bucket(c.d8,c.campaignCategory));
+  if(webBookingsDataReady){
+    ALL_WEBBOOKINGS.forEach(c=>{ if(c.isLead && mktCategoryMatch(c) && mktBizMatch(c.bizUnit)) bucket(c.d8,c.campaignCategory); });
+    ALL_JOBS.forEach(j=>{ if(mktIsManualCallJob(j) && mktBizMatch(j.b) && mktCategoryMatch({campaignCategory:j.cat||'Uncategorized'})) bucket(j.cd8,j.cat||'Uncategorized'); });
+  }
+  return { dayKeys, cats:[...cats].sort(), byDay };
+}
+function renderLeadsChannelChart(){
+  destroyMkt('leadsChannel');
+  const ctx=document.getElementById('mktLeadsChannelChart');
+  if(!ctx) return;
+  const tm=mktCurrentRange();
+  const {dayKeys,cats,byDay}=computeLeadsChannelSeries(tm.from,tm.to);
+  const datasets=cats.map((cat,i)=>({ label:cat, data:dayKeys.map(k=>byDay[k][cat]||0), backgroundColor:CALL_ANALYSIS_PALETTE[i%CALL_ANALYSIS_PALETTE.length], stack:'s' }));
+  MKT_CHARTS.leadsChannel=new Chart(ctx,{
+    type:'bar',
+    data:{ labels: dayKeys.map(mktDayLabel), datasets },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom', labels:{boxWidth:12,font:{size:11}}} }, scales:{ x:{stacked:true, ticks:{font:{size:9}, maxRotation:0, autoSkip:true}}, y:{stacked:true, beginAtZero:true, ticks:{precision:0}} } }
+  });
+}
+function renderLeadsPerCampaignChart(){
+  destroyMkt('campaign');
+  const ctx=document.getElementById('mktCampaignChart');
+  if(!ctx) return;
+  const tm=mktCurrentRange();
+  const counts=new Map();
+  function bump(name){ const k=(name||'').trim()||'Uncategorized'; counts.set(k,(counts.get(k)||0)+1); }
+  mktOverviewRows().filter(c=>c.isLead).forEach(c=>bump(c.campaign));
+  if(webBookingsDataReady){
+    ALL_WEBBOOKINGS.forEach(c=>{ if(c.isLead && c.d8 && c.d8>=tm.from && c.d8<=tm.to && mktCategoryMatch(c) && mktBizMatch(c.bizUnit)) bump(c.campaign); });
+    ALL_JOBS.forEach(j=>{ if(mktIsManualCallJob(j) && j.cd8 && j.cd8>=tm.from && j.cd8<=tm.to && mktBizMatch(j.b) && mktCategoryMatch({campaignCategory:j.cat||'Uncategorized'})) bump(j.campaign); });
+  }
+  const entries=[...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,10);
+  MKT_CHARTS.campaign=new Chart(ctx,{
+    type:'bar',
+    data:{ labels: entries.map(e=>e[0]), datasets:[{ label:'Leads', data: entries.map(e=>e[1]), backgroundColor: entries.map((_,i)=>CALL_ANALYSIS_PALETTE[i%CALL_ANALYSIS_PALETTE.length]), borderRadius:4 }] },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false} }, scales:{ x:{ beginAtZero:true, ticks:{precision:0} } } }
+  });
+}
+function renderMktUnbookedReasonChart(){
+  destroyMkt('unbookedReason');
+  const ctx=document.getElementById('mktUnbookedReasonChart');
+  if(!ctx) return;
+  const rows=mktOverviewRows().filter(c=>c.isLead && c.callType==='Unbooked');
+  const reasonMap=new Map();
+  rows.forEach(r=>{ const k=mktReasonBucket(r.callReason); reasonMap.set(k,(reasonMap.get(k)||0)+1); });
+  const entries=[...reasonMap.entries()].sort((a,b)=>b[1]-a[1]);
+  MKT_CHARTS.unbookedReason=new Chart(ctx,{
+    type:'bar',
+    data:{ labels: entries.map(e=>e[0]), datasets:[{ label:'Unbooked Leads', data: entries.map(e=>e[1]), backgroundColor: entries.map((_,i)=>CALL_ANALYSIS_PALETTE[i%CALL_ANALYSIS_PALETTE.length]), borderRadius:4 }] },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false} }, scales:{ x:{ beginAtZero:true, ticks:{precision:0} } } }
+  });
+}
+let mktChartsRefreshScheduled=false;
+function refreshMarketingCharts(){
+  if(mktChartsRefreshScheduled) return;
+  mktChartsRefreshScheduled=true;
+  requestAnimationFrame(()=>{
+    mktChartsRefreshScheduled=false;
+    try{ renderLeadsByDateChart(); }catch(e){ console.error('[Marketing] Number of Leads by Date chart failed to render:', e); }
+    try{ renderLeadsChannelChart(); }catch(e){ console.error('[Marketing] Daily Leads per Channel chart failed to render:', e); }
+    try{ renderLeadsPerCampaignChart(); }catch(e){ console.error('[Marketing] Leads Per Campaign chart failed to render:', e); }
+    try{ renderMktUnbookedReasonChart(); }catch(e){ console.error('[Marketing] Unbooked Reason chart failed to render:', e); }
+  });
+}
+
+// Lead Detail table (Overview page) — unified across Calls, Web Bookings,
+// and Manual Calls, driven by the Source dropdown (id="mktSourceSel"). Each
+// source is mapped into the same row shape (source/d8/time/customerName/
+// campaign/campaignCategory/typeStatus/jobNumber/jobStatus/bizUnit/city/
+// callId) so sort/render/export never need to know which source a row came
+// from.
+let leadSortKey='d8', leadSortDir=-1, leadPage=1, leadSearchQuery='', leadSearchTimer=null;
+const LEAD_DETAIL_SORT_TH = { d8:'ldth-d8', customerName:'ldth-cust', campaign:'ldth-camp', campaignCategory:'ldth-cat', typeStatus:'ldth-type', bizUnit:'ldth-bu' };
+const MKT_SOURCE_COUNT_LABEL = { all:'leads', calls:'lead calls', webbookings:'web booking leads', manual:'manual call leads' };
+function changeMktSource(v){ mktSource=v; leadPage=1; renderLeadDetailTable(); }
+function buildCallsLeadRows(){
+  return mktOverviewRows().filter(c=>c.isLead).map(c=>({
+    source:'Call', d8:c.d8, time:c.callTime||'', customerName:c.customerName||'',
+    campaign:c.campaign||'', campaignCategory:c.campaignCategory,
+    typeStatus:c.callType||'', jobNumber:c.jobNumber||'', jobStatus:c.jobStatus||'',
+    bizUnit:c.bizUnit, city:c.customerCity||'', callId:c.id||'',
+  }));
+}
+function buildWebBookingLeadRows(from,to){
+  return ALL_WEBBOOKINGS.filter(c=>c.isLead && c.d8 && c.d8>=from && c.d8<=to && mktCategoryMatch(c) && mktBizMatch(c.bizUnit)).map(c=>({
+    source:'Web Booking', d8:c.d8, time:'', customerName:c.customerName||'',
+    campaign:c.campaign||'', campaignCategory:c.campaignCategory,
+    typeStatus:c.status+(c.dismissReason?' — '+c.dismissReason:''), jobNumber:c.jobNumber||'', jobStatus:c.jobStatus||'',
+    bizUnit:c.bizUnit, city:c.city||'', callId:'',
+  }));
+}
+function buildManualCallLeadRows(from,to){
+  return ALL_JOBS.filter(j=>mktIsManualCallJob(j) && j.cd8 && j.cd8>=from && j.cd8<=to && mktBizMatch(j.b) && mktCategoryMatch({campaignCategory:j.cat||'Uncategorized'})).map(j=>({
+    source:'Manual Call', d8:j.cd8, time:'', customerName:j.c||'',
+    campaign:j.campaign||'', campaignCategory:j.cat||'Uncategorized',
+    typeStatus:j.jt||'', jobNumber:j.o||'', jobStatus:j.status||'',
+    bizUnit:j.b, city:j.city||'', callId:'',
+  }));
+}
+function currentLeadDetailRows(){
+  const tm=mktCurrentRange();
+  let rows;
+  if(mktSource==='calls') rows=buildCallsLeadRows();
+  else if(mktSource==='webbookings') rows=buildWebBookingLeadRows(tm.from,tm.to);
+  else if(mktSource==='manual') rows=buildManualCallLeadRows(tm.from,tm.to);
+  else if(webBookingsDataReady) rows=buildCallsLeadRows().concat(buildWebBookingLeadRows(tm.from,tm.to)).concat(buildManualCallLeadRows(tm.from,tm.to));
+  else rows=buildCallsLeadRows();
+  if(leadSearchQuery){
+    rows=rows.filter(r=>(r.source+' '+r.customerName+' '+r.campaign+' '+r.campaignCategory+' '+r.typeStatus+' '+r.jobNumber+' '+r.jobStatus+' '+r.bizUnit+' '+r.city).toLowerCase().includes(leadSearchQuery));
+  }
+  rows=rows.slice().sort((a,b)=>{
+    let va=a[leadSortKey], vb=b[leadSortKey];
+    if(va==null) va=''; if(vb==null) vb='';
+    if(typeof va==='number' && typeof vb==='number') return (va-vb)*leadSortDir;
+    return String(va).localeCompare(String(vb))*leadSortDir;
+  });
+  return rows;
+}
+function renderLeadDetailTable(){
+  const body=document.getElementById('mktLeadDetailBody');
+  if(!body) return;
+  if(!callsDataReady){ body.innerHTML='<tr><td colspan="13" class="mkt-placeholder">Loading…</td></tr>'; return; }
+  const rows=currentLeadDetailRows();
+  const cntEl=document.getElementById('mkt-leaddetail-count');
+  if(cntEl) cntEl.textContent=rows.length.toLocaleString()+' '+(MKT_SOURCE_COUNT_LABEL[mktSource]||'leads');
+  const start=(leadPage-1)*PAGE_SIZE;
+  const page=rows.slice(start,start+PAGE_SIZE);
+  body.innerHTML=page.map((r,i)=>`<tr><td>${start+i+1}</td><td>${esc(r.source)}</td><td style="white-space:nowrap">${r.d8?fmtDate(new Date(r.d8+'T00:00:00')):'—'}</td><td>${esc(r.time)||'—'}</td>`
+    +`<td class="td-cust">${esc(r.customerName)||'—'}</td><td>${esc(r.campaign)||'—'}</td><td>${esc(r.campaignCategory)}</td>`
+    +`<td>${esc(r.typeStatus)||'—'}</td><td class="mono">${esc(r.jobNumber)||'—'}</td><td>${esc(r.jobStatus)||'—'}</td>`
+    +`<td>${esc(r.bizUnit)}</td><td>${esc(r.city)||'—'}</td><td>${stCallLink(r.callId)}</td></tr>`).join('')
+    || '<tr><td colspan="13" style="text-align:center;color:var(--gray-500);padding:20px">No leads match the current filters, or Web Bookings hasn\'t loaded yet</td></tr>';
+  Object.values(LEAD_DETAIL_SORT_TH).forEach(id=>{ const th=document.getElementById(id); if(th) th.classList.remove('sort-asc','sort-desc'); });
+  const activeTh=document.getElementById(LEAD_DETAIL_SORT_TH[leadSortKey]);
+  if(activeTh) activeTh.classList.add(leadSortDir===1?'sort-asc':'sort-desc');
+  renderJobPagination('mktLeadDetailPagination', rows.length, leadPage, 'goLeadDetailPage');
+}
+function goLeadDetailPage(p){ leadPage=p; renderLeadDetailTable(); }
+function onLeadSearchInput(v){
+  clearTimeout(leadSearchTimer);
+  leadSearchTimer=setTimeout(()=>{ leadSearchQuery=String(v||'').trim().toLowerCase(); leadPage=1; renderLeadDetailTable(); },200);
+}
+function sortLeadDetail(key){
+  if(leadSortKey===key) leadSortDir*=-1; else { leadSortKey=key; leadSortDir = key==='d8'?-1:1; }
+  renderLeadDetailTable();
+}
+function exportLeadDetailXLSX(){
+  const rows=currentLeadDetailRows();
+  exportJobsXLSX('Coolbreeze_Marketing_LeadDetail_'+todayISO()+'.xlsx',
+    ['#','Source','Date','Time','Customer','Campaign','Campaign Category','Type / Status','Job #','Job Status','Business Unit','City','Call Recording'],
+    rows.map((r,i)=>[i+1, r.source, r.d8?fmtDate(new Date(r.d8+'T00:00:00')):'—', r.time, r.customerName, r.campaign, r.campaignCategory, r.typeStatus, r.jobNumber, r.jobStatus, r.bizUnit, r.city, r.callId?'https://go.servicetitan.com/Call/CallRecording/'+encodeURIComponent(r.callId):'']));
+}
+
+// Needs Reclassification table — calls with a blank Call Campaign or a
+// blank Campaign Category (bucketed to "Uncategorized" in parseCallsRows),
+// in range + Business Unit. "No Campaign" is a real, meaningful category in
+// this export (calls through the general office line rather than a tracked
+// ad campaign) — not an attribution gap — so it's deliberately NOT flagged.
+let uncatPage=1;
+function currentUncatRows(){
+  const tm=mktCurrentRange();
+  return ALL_CALLS.filter(c=>c.d8 && c.d8>=tm.from && c.d8<=tm.to && mktBizMatch(c.bizUnit)
+    && (!String(c.campaign||'').trim() || c.campaignCategory==='Uncategorized'));
+}
+function renderUncatTable(){
+  const body=document.getElementById('mktUncatBody');
+  if(!body) return;
+  if(!callsDataReady){ body.innerHTML='<tr><td colspan="11" class="mkt-placeholder">Loading…</td></tr>'; return; }
+  const rows=currentUncatRows();
+  const countEl=document.getElementById('mkt-uncat-count');
+  if(countEl) countEl.textContent=rows.length.toLocaleString()+' records';
+  const start=(uncatPage-1)*PAGE_SIZE;
+  const page=rows.slice(start,start+PAGE_SIZE);
+  body.innerHTML=page.map((r,i)=>`<tr><td>${start+i+1}</td><td>Call</td><td style="white-space:nowrap">${r.d8?fmtDate(new Date(r.d8+'T00:00:00')):'—'}</td>`
+    +`<td class="td-cust">${esc(r.customerName)||'—'}</td><td class="mono">${esc(r.phone)||'—'}</td><td>${esc(r.campaign)||'—'}</td><td>${esc(r.campaignCategory)}</td>`
+    +`<td class="mono">${esc(r.jobNumber)||'—'}</td><td>${stJobLink(r.jobNumber)}</td><td>${esc(r.bizUnit)}</td><td>${stCallLink(r.id)}</td></tr>`).join('')
+    || '<tr><td colspan="11" style="text-align:center;color:var(--gray-500);padding:20px">Nothing to reclassify in the selected date range and Business Unit</td></tr>';
+  renderJobPagination('mktUncatPagination', rows.length, uncatPage, 'goUncatPage');
+}
+function goUncatPage(p){ uncatPage=p; renderUncatTable(); }
+
+function applyMktFilters(){
+  leadPage=1;
+  uncatPage=1;
+  updateOverviewKPIs();
+  renderBizUnitTable();
+  renderMktRoiTable();
+  refreshMarketingCharts();
+  renderLeadDetailTable();
+  renderUncatTable();
+  if(mktActivePage==='calls'){ callsAuditPage=1; renderCallAnalysisPage(currentCallAnalysisRows()); }
+}
+function switchMktPage(page){
+  mktActivePage=page;
+  const ov=document.getElementById('mktPage-overview');
+  const ca=document.getElementById('mktPage-calls');
+  if(ov) ov.style.display = page==='overview' ? '' : 'none';
+  if(ca) ca.style.display = page==='calls' ? '' : 'none';
+  if(page==='calls'){ callsAuditPage=1; renderCallAnalysisPage(currentCallAnalysisRows()); }
+}
+function resetMktFilters(){
+  document.getElementById('mktDateFrom').value=monthStartISO();
+  document.getElementById('mktDateTo').value=todayISO();
+  ['mktCat','mktBiz','mktCallType','mktReason'].forEach(k=>{ MS_SEL[k].clear(); renderMSItems(k); updateMSBtn(k); });
+  const leadSelEl=document.getElementById('mktCallsLeadSel'); if(leadSelEl) leadSelEl.value='all';
+  const excusedSelEl=document.getElementById('mktCallsExcusedSel'); if(excusedSelEl) excusedSelEl.value='all';
+  const hoursSelEl=document.getElementById('mktHoursSel'); if(hoursSelEl) hoursSelEl.value='all';
+  leadSearchQuery=''; const searchEl=document.getElementById('mktLeadSearch'); if(searchEl) searchEl.value='';
+  mktSource='all'; const sourceEl=document.getElementById('mktSourceSel'); if(sourceEl) sourceEl.value='all';
+  callsAuditSearchQuery=''; const casEl=document.getElementById('callsAuditSearch'); if(casEl) casEl.value='';
+  applyMktFilters();
+}
+
+/* ---- Call Analysis page (100% Calls-derivable — ported from Best Plumber's
+   Marketing tab almost verbatim, since this page needs no other data source). ---- */
+function currentCallAnalysisRows(){
+  const tm=mktCurrentRange();
+  const leadSel=(document.getElementById('mktCallsLeadSel')||{}).value || 'all';
+  const excusedSel=(document.getElementById('mktCallsExcusedSel')||{}).value || 'all';
+  const hoursSel=(document.getElementById('mktHoursSel')||{}).value || 'all';
+  return ALL_CALLS.filter(c=>{
+    if(!c.d8 || c.d8<tm.from || c.d8>tm.to) return false;
+    if(!mktCategoryMatch(c)) return false;
+    if(!mktBizMatch(c.bizUnit)) return false;
+    if(!mktCallTypeMatch(c.callType)) return false;
+    if(leadSel==='lead' && !c.isLead) return false;
+    if(leadSel==='notlead' && c.isLead) return false;
+    if(excusedSel==='excused' && !c.excused) return false;
+    if(excusedSel==='notexcused' && c.excused) return false;
+    if(!mktReasonMatch(c.callReason)) return false;
+    if(hoursSel==='biz' && c.bizHours!==true) return false;
+    if(hoursSel==='after' && c.bizHours!==false) return false;
+    return true;
+  });
+}
+
+let callsAuditSortKey='d8', callsAuditSortDir=-1, callsAuditPage=1, callsAuditSearchQuery='', callsAuditSearchTimer=null, callsAuditBase=[];
+const CALLS_AUDIT_SORT_TH = { d8:'cath-d8', isLead:'cath-lead', campaign:'cath-channel', customerName:'cath-customer', name:'cath-agent', callType:'cath-callType', callTime:'cath-time', lengthMin:'cath-lengthMin', excused:'cath-excused' };
+
+function renderCallAnalysisPage(rows){
+  rows = rows || [];
+  const total = rows.length;
+  const leadCalls = rows.filter(r=>r.isLead).length;
+  const unqualifiedCalls = total - leadCalls;
+  const withTime = rows.filter(r=>r.bizHours===true || r.bizHours===false);
+  const bizCalls = withTime.filter(r=>r.bizHours===true).length;
+  const afterCalls = withTime.filter(r=>r.bizHours===false).length;
+  const weekdayCalls = rows.filter(r=>!r.weekend).length;
+  const weekendCalls = rows.filter(r=>r.weekend).length;
+  const totalMin = rows.reduce((s,r)=>s+(r.lengthMin||0),0);
+  const bizMin = withTime.filter(r=>r.bizHours===true).reduce((s,r)=>s+(r.lengthMin||0),0);
+  const afterMin = withTime.filter(r=>r.bizHours===false).reduce((s,r)=>s+(r.lengthMin||0),0);
+  const weekdayMin = rows.filter(r=>!r.weekend).reduce((s,r)=>s+(r.lengthMin||0),0);
+  const weekendMin = rows.filter(r=>r.weekend).reduce((s,r)=>s+(r.lengthMin||0),0);
+
+  const setTxt = (id,val)=>{ const el=document.getElementById(id); if(el) el.textContent = val; };
+  setTxt('cak-total', total.toLocaleString());
+  setTxt('cak-total-sub', total>0 ? mktFmtCallMinutes(totalMin)+' total call time' : 'No calls in range');
+  setTxt('cak-lead', leadCalls.toLocaleString());
+  setTxt('cak-lead-sub', total>0 ? Math.round(leadCalls/total*100)+'% of calls' : 'No calls in range');
+  setTxt('cak-unqualified', unqualifiedCalls.toLocaleString());
+  setTxt('cak-unqualified-sub', total>0 ? Math.round(unqualifiedCalls/total*100)+'% of calls' : 'No calls in range');
+  setTxt('cak-biz', bizCalls.toLocaleString());
+  setTxt('cak-biz-sub', withTime.length>0 ? Math.round(bizCalls/withTime.length*100)+'% of calls · '+mktFmtCallMinutes(bizMin) : 'No parseable call times');
+  setTxt('cak-after', afterCalls.toLocaleString());
+  setTxt('cak-after-sub', withTime.length>0 ? Math.round(afterCalls/withTime.length*100)+'% of calls · '+mktFmtCallMinutes(afterMin) : 'No parseable call times');
+  setTxt('cak-weekday', weekdayCalls.toLocaleString());
+  setTxt('cak-weekday-sub', total>0 ? Math.round(weekdayCalls/total*100)+'% of calls · '+mktFmtCallMinutes(weekdayMin) : 'No calls in range');
+  setTxt('cak-weekend', weekendCalls.toLocaleString());
+  setTxt('cak-weekend-sub', total>0 ? Math.round(weekendCalls/total*100)+'% of calls · '+mktFmtCallMinutes(weekendMin) : 'No calls in range');
+
+  destroyMkt('callsByDay');
+  const dayCtx = document.getElementById('mktCallsByDayChart');
+  if(dayCtx){
+    const tmDay = mktCurrentRange();
+    const dayKeys = mktDayRange(tmDay.from, tmDay.to);
+    const byDayLead = {}, byDayNonLead = {};
+    dayKeys.forEach(k=>{ byDayLead[k]=0; byDayNonLead[k]=0; });
+    rows.forEach(r=>{
+      if(!r.d8 || !(r.d8 in byDayLead)) return;
+      if(r.isLead) byDayLead[r.d8]++; else byDayNonLead[r.d8]++;
+    });
+    const dayCntEl = document.getElementById('mktCallsByDay-count');
+    if(dayCntEl) dayCntEl.textContent = total.toLocaleString()+' call'+(total!==1?'s':'')+' · '+dayKeys.length.toLocaleString()+' day'+(dayKeys.length!==1?'s':'');
+    const dailyTotalLabelPlugin = {
+      id: 'dailyTotalLabelPlugin',
+      afterDatasetsDraw(chart){
+        const { ctx, data } = chart;
+        ctx.save();
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text') || '#132537';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        for(let i=0;i<data.labels.length;i++){
+          let tot=0, topY=null, anyX=null;
+          for(let d=0; d<data.datasets.length; d++){
+            const v = data.datasets[d].data[i]||0;
+            tot += v;
+            const meta = chart.getDatasetMeta(d);
+            const el = meta.data[i];
+            if(!el) continue;
+            anyX = el.x;
+            if(v>0) topY = el.y;
+          }
+          if(tot<=0 || topY===null) continue;
+          ctx.fillText(tot.toLocaleString(), anyX, topY-4);
+        }
+        ctx.restore();
+      }
+    };
+    MKT_CHARTS.callsByDay = new Chart(dayCtx, {
+      type:'bar',
+      data:{ labels: dayKeys.map(mktDayLabel), datasets:[
+        { label:'Lead Calls', data: dayKeys.map(k=>byDayLead[k]), backgroundColor:'#3B6FD1', borderRadius:4, stack:'calls' },
+        { label:'Non-Lead Calls', data: dayKeys.map(k=>byDayNonLead[k]), backgroundColor:'#C7D0D7', borderRadius:4, stack:'calls' },
+      ] },
+      plugins:[ dailyTotalLabelPlugin ],
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        layout:{ padding:{ top:20 } },
+        plugins:{ legend:{display:true, position:'top', align:'end', labels:{boxWidth:12, font:{size:11}}}, tooltip:{ callbacks:{ label:c=>' '+c.dataset.label+': '+c.parsed.y.toLocaleString()+' call'+(c.parsed.y!==1?'s':'') } } },
+        scales:{ y:{ stacked:true, beginAtZero:true, ticks:{precision:0} }, x:{ stacked:true, ticks:{font:{size:9}, maxRotation:0, autoSkip:true} } }
+      }
+    });
+  }
+
+  destroyMkt('callsByHour');
+  const hourCtx = document.getElementById('mktCallsByHourChart');
+  if(hourCtx){
+    const buckets = new Array(24).fill(0);
+    rows.forEach(r=>{ if(r.hourOfDay!=null) buckets[r.hourOfDay]++; });
+    const parsedCount = buckets.reduce((s,v)=>s+v,0);
+    const hourCntEl = document.getElementById('mktCallsByHour-count');
+    if(hourCntEl) hourCntEl.textContent = parsedCount.toLocaleString()+' call'+(parsedCount!==1?'s':'')+(total>parsedCount ? ' ('+(total-parsedCount).toLocaleString()+' with no parseable time)' : '');
+    const hourColors = buckets.map((_,h)=>(h>=MKT_CALL_BIZ_START_HOUR && h<MKT_CALL_BIZ_END_HOUR) ? '#3B6FD1' : '#9AA5B1');
+    MKT_CHARTS.callsByHour = new Chart(hourCtx, {
+      type:'bar',
+      data:{ labels: MKT_CALL_HOUR_LABELS, datasets:[{ label:'Calls', data:buckets, backgroundColor:hourColors, borderRadius:4 }] },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:c=>' '+c.parsed.y.toLocaleString()+' call'+(c.parsed.y!==1?'s':'') } } },
+        scales:{ y:{ beginAtZero:true, ticks:{precision:0} }, x:{ ticks:{font:{size:9}} } }
+      }
+    });
+  }
+
+  destroyMkt('callsBySource');
+  const srcCtx = document.getElementById('mktCallsBySourceChart');
+  if(srcCtx){
+    const bySource = new Map();
+    rows.forEach(r=>{ const k = r.campaign || 'Uncategorized'; bySource.set(k, (bySource.get(k)||0)+1); });
+    const srcEntries = [...bySource.entries()].sort((a,b)=>b[1]-a[1]);
+    const srcCntEl = document.getElementById('mktCallsBySource-count');
+    if(srcCntEl) srcCntEl.textContent = total.toLocaleString()+' call'+(total!==1?'s':'');
+    MKT_CHARTS.callsBySource = new Chart(srcCtx, {
+      type:'bar',
+      data:{ labels: srcEntries.map(e=>e[0]), datasets:[{ label:'Calls', data: srcEntries.map(e=>e[1]), backgroundColor: srcEntries.map((_,i)=>CALL_ANALYSIS_PALETTE[i%CALL_ANALYSIS_PALETTE.length]), borderRadius:4 }] },
+      options:{
+        indexAxis:'y', responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:c=>' '+c.parsed.x.toLocaleString()+' call'+(c.parsed.x!==1?'s':'') } } },
+        scales:{ x:{ beginAtZero:true, ticks:{precision:0} } }
+      }
+    });
+  }
+
+  destroyMkt('callsUnbookedReason');
+  const unbCtx = document.getElementById('mktCallsUnbookedReasonChart');
+  if(unbCtx){
+    const unbooked = rows.filter(r=>r.isLead && r.callType==='Unbooked');
+    const unbCntEl = document.getElementById('mktCallsUnbookedReason-count');
+    if(unbCntEl) unbCntEl.textContent = unbooked.length.toLocaleString()+' unbooked call'+(unbooked.length!==1?'s':'');
+    const reasonMap = new Map();
+    unbooked.forEach(r=>{ const k = mktReasonBucket(r.callReason); reasonMap.set(k, (reasonMap.get(k)||0)+1); });
+    const reasonEntries = [...reasonMap.entries()].sort((a,b)=>b[1]-a[1]);
+    MKT_CHARTS.callsUnbookedReason = new Chart(unbCtx, {
+      type:'bar',
+      data:{ labels: reasonEntries.map(e=>e[0]), datasets:[{ label:'Unbooked Calls', data: reasonEntries.map(e=>e[1]), backgroundColor: reasonEntries.map((_,i)=>CALL_ANALYSIS_PALETTE[i%CALL_ANALYSIS_PALETTE.length]), borderRadius:4 }] },
+      options:{
+        indexAxis:'y', responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:c=>' '+c.parsed.x.toLocaleString()+' call'+(c.parsed.x!==1?'s':'') } } },
+        scales:{ x:{ beginAtZero:true, ticks:{precision:0} } }
+      }
+    });
+  }
+
+  destroyMkt('callsByExcused');
+  const excCtx = document.getElementById('mktCallsByExcusedChart');
+  if(excCtx){
+    const excused = rows.filter(r=>r.excused);
+    const excCntEl = document.getElementById('mktCallsByExcused-count');
+    if(excCntEl) excCntEl.textContent = excused.length.toLocaleString()+' excused call'+(excused.length!==1?'s':'');
+    const reasonMap = new Map();
+    excused.forEach(r=>{ const k = mktReasonBucket(r.callReason); reasonMap.set(k, (reasonMap.get(k)||0)+1); });
+    const reasonEntries = [...reasonMap.entries()].sort((a,b)=>b[1]-a[1]);
+    MKT_CHARTS.callsByExcused = new Chart(excCtx, {
+      type:'bar',
+      data:{ labels: reasonEntries.map(e=>e[0]), datasets:[{ label:'Excused Calls', data: reasonEntries.map(e=>e[1]), backgroundColor: reasonEntries.map((_,i)=>CALL_ANALYSIS_PALETTE[i%CALL_ANALYSIS_PALETTE.length]), borderRadius:4 }] },
+      options:{
+        indexAxis:'y', responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:c=>' '+c.parsed.x.toLocaleString()+' call'+(c.parsed.x!==1?'s':'') } } },
+        scales:{ x:{ beginAtZero:true, ticks:{precision:0} } }
+      }
+    });
+  }
+
+  callsAuditBase = rows;
+  callsAuditPage = 1;
+  renderCallsAuditTable();
+}
+
+function callsAuditRowMatchesSearch(r){
+  if(!callsAuditSearchQuery) return true;
+  return (r.customerName+' '+r.name+' '+r.campaign+' '+r.jobNumber).toLowerCase().includes(callsAuditSearchQuery);
+}
+function currentCallsAuditRows(){
+  let rows = (callsAuditBase||[]).filter(callsAuditRowMatchesSearch);
+  rows = rows.slice().sort((a,b)=>{
+    let va=a[callsAuditSortKey], vb=b[callsAuditSortKey];
+    if(callsAuditSortKey==='isLead' || callsAuditSortKey==='excused'){ va = va?1:0; vb = vb?1:0; }
+    if(va==null) va=''; if(vb==null) vb='';
+    if(typeof va==='number' && typeof vb==='number') return (va-vb)*callsAuditSortDir;
+    return String(va).localeCompare(String(vb))*callsAuditSortDir;
+  });
+  return rows;
+}
+function renderCallsAuditTable(){
+  const rows = currentCallsAuditRows();
+  const cntEl = document.getElementById('callsAudit-count');
+  if(cntEl) cntEl.textContent = rows.length.toLocaleString()+' call'+(rows.length!==1?'s':'');
+  const start=(callsAuditPage-1)*PAGE_SIZE;
+  const page = rows.slice(start,start+PAGE_SIZE);
+  const body = document.getElementById('callsAuditBody');
+  if(body){
+    body.innerHTML = page.map(r=>`<tr><td style="white-space:nowrap">${r.d8?fmtDate(new Date(r.d8+'T00:00:00')):'—'}</td><td>${r.isLead?'Yes':'No'}</td><td>${esc(r.campaign)||'—'}</td><td class="td-cust">${esc(r.customerName)||'—'}</td><td>${esc(r.phone)||'—'}</td><td>${esc(r.name)||'—'}</td><td>${esc(r.callType)||'—'}</td><td>${esc(r.callTime)||'—'}</td><td>${r.lengthMin?mktFmtCallMinutes(r.lengthMin):'—'}</td><td>${r.excused?'Yes':'No'}</td><td>${esc(r.callReason)||'—'}</td><td>${esc(r.callMemo)||'—'}</td><td>${stCallLink(r.id)}</td></tr>`).join('') || '<tr><td colspan="13" style="text-align:center;color:var(--gray-500);padding:20px">No calls match the current filters</td></tr>';
+  }
+  Object.values(CALLS_AUDIT_SORT_TH).forEach(id=>{
+    const th = document.getElementById(id);
+    if(th) th.classList.remove('sort-asc','sort-desc');
+  });
+  const activeTh = document.getElementById(CALLS_AUDIT_SORT_TH[callsAuditSortKey]);
+  if(activeTh) activeTh.classList.add(callsAuditSortDir===1?'sort-asc':'sort-desc');
+  renderJobPagination('callsAuditPagination', rows.length, callsAuditPage, 'goCallsAuditPage');
+}
+function sortCallsAudit(key){
+  if(callsAuditSortKey===key) callsAuditSortDir*=-1; else { callsAuditSortKey=key; callsAuditSortDir = key==='d8' ? -1 : 1; }
+  renderCallsAuditTable();
+}
+function goCallsAuditPage(p){ callsAuditPage=p; renderCallsAuditTable(); }
+function onCallsAuditSearchInput(v){
+  clearTimeout(callsAuditSearchTimer);
+  callsAuditSearchTimer = setTimeout(()=>{
+    callsAuditSearchQuery = String(v||'').trim().toLowerCase();
+    callsAuditPage = 1;
+    renderCallsAuditTable();
+  }, 200);
+}
+function exportCallsAuditXLSX(){
+  const rows = currentCallsAuditRows();
+  exportJobsXLSX('Coolbreeze_Marketing_CallsAudit_'+todayISO()+'.xlsx', ['Date','Lead','Channel','Customer','Phone','Name','Call Type','Time','Length (min)','Excused','Reason','Call Memo','Call Recording'],
+    rows.map(r=>[r.d8?fmtDate(new Date(r.d8+'T00:00:00')):'—', r.isLead?'Yes':'No', r.campaign, r.customerName, r.phone, r.name, r.callType, r.callTime, r.lengthMin?Math.round(r.lengthMin*10)/10:'', r.excused?'Yes':'No', r.callReason, r.callMemo, r.id ? 'https://go.servicetitan.com/Call/CallRecording/'+encodeURIComponent(r.id) : '']));
+}
+
+async function fetchCallsBlob(){ return fetchBlobXLSX(MKT_CONFIG.sasUrlCalls); }
+async function fetchWebBookingsBlob(){ return fetchBlobXLSX(MKT_CONFIG.sasUrlWebBookings); }
+
+// Total Leads/Opportunities and the charts/tables that depend on them read
+// ALL_JOBS for their Manual Calls component. Jobs loads on its own
+// independent schedule (the Jobs tab's own loadAndInitJobs()), so this hook
+// — called from processJobs() itself — re-applies Marketing's filters if
+// Jobs finishes loading (or its background refresh completes) after Calls
+// and Web Bookings are already up, instead of leaving Manual Calls at 0
+// until the next manual filter change.
+function refreshMktAfterJobsLoad(){
+  if(callsDataReady && webBookingsDataReady) applyMktFilters();
+}
+
+async function loadAndInitMkt(){
+  document.getElementById('mktDateFrom').value=monthStartISO();
+  document.getElementById('mktDateTo').value=todayISO();
+  // These two never become live without an ad-spend/job-cancellation-detail
+  // source — set once up front rather than re-checked on every filter change.
+  renderChartPlaceholder('mktSpendChart', 'Awaiting data source — Marketing Spend pending connection');
+  renderChartPlaceholder('mktCancelReasonChart', 'Awaiting data source — Cancelled Board pending connection');
+
+  async function loadCalls(){
+    const cached=getCached(REPORT_KEY_CALLS);
+    if(cached){
+      ALL_CALLS=parseCallsRows(cached);
+      callsDataReady=true;
+      buildMktFilterOptions();
+      applyMktFilters();
+      try{
+        const rows=await fetchCallsBlob();
+        setCache(REPORT_KEY_CALLS, rows);
+        ALL_CALLS=parseCallsRows(rows);
+        buildMktFilterOptions();
+        applyMktFilters();
+      }catch(e){
+        console.warn('[Marketing] Calls BG refresh failed:', e);
+      }
+      return;
+    }
+    const rows=await fetchCallsBlob();
+    setCache(REPORT_KEY_CALLS, rows);
+    ALL_CALLS=parseCallsRows(rows);
+    callsDataReady=true;
+    buildMktFilterOptions();
+    applyMktFilters();
+  }
+
+  async function loadWebBookings(){
+    const cached=getCached(REPORT_KEY_WEBBOOKINGS);
+    if(cached){
+      ALL_WEBBOOKINGS=parseWebBookingRows(cached);
+      webBookingsDataReady=true;
+      buildMktFilterOptions();
+      applyMktFilters();
+      try{
+        const rows=await fetchWebBookingsBlob();
+        setCache(REPORT_KEY_WEBBOOKINGS, rows);
+        ALL_WEBBOOKINGS=parseWebBookingRows(rows);
+        buildMktFilterOptions();
+        applyMktFilters();
+      }catch(e){
+        console.warn('[Marketing] Web Bookings BG refresh failed:', e);
+      }
+      return;
+    }
+    const rows=await fetchWebBookingsBlob();
+    setCache(REPORT_KEY_WEBBOOKINGS, rows);
+    ALL_WEBBOOKINGS=parseWebBookingRows(rows);
+    webBookingsDataReady=true;
+    buildMktFilterOptions();
+    applyMktFilters();
+  }
+
+  document.getElementById('mkt-finfo').textContent='Connecting to Azure…';
+  const results=await Promise.allSettled([loadCalls(), loadWebBookings()]);
+  const errs=results.filter(r=>r.status==='rejected').map(r=>r.reason && r.reason.message || String(r.reason));
+  if(errs.length){
+    console.error('[Marketing] Load error(s):', errs);
+    const finfo=document.getElementById('mkt-finfo');
+    if(finfo) finfo.textContent+=' · ⚠ '+errs.join('; ').slice(0,120);
+  }
+}
+
+// Add the Calls + Web Bookings cache keys to "Hard Refresh" (clearAllCache) too.
+const _origClearAllCache3=clearAllCache;
+clearAllCache=function(){
+  _origClearAllCache3();
+  try{ localStorage.removeItem('cb_'+REPORT_KEY_CALLS); }catch(e){}
+  try{ localStorage.removeItem('cb_'+REPORT_KEY_WEBBOOKINGS); }catch(e){}
+};
+
+document.addEventListener('DOMContentLoaded', loadAndInitMkt);
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════════
+// ACCOUNTS RECEIVABLE TAB (added 2026-09-12, mirrors Best Plumber's own
+// "Accounts Receivable" sidebar tab at Ariel's request). Own flat top-level
+// <script> block, own cache key, own DOMContentLoaded hook — same isolation
+// pattern as Jobs/Estimates/Marketing, so a problem here can't take down any
+// other tab. Fetches directly from Azure Blob Storage via the already-
+// defined fetchBlobXLSX() helper (Jobs/Estimates/PO/QB Bills/ST Membership
+// all already share it).
+//
+// Data source: "Invoices Service Titan.xlsx", a ServiceTitan line-item
+// invoice export (3774 real rows / 1823 distinct invoices) — same shape as
+// Best Plumber's own "Invoices Power BI.xlsx": Invoice Date/Balance/
+// Subtotal repeat identically across every line item of the same invoice
+// (confirmed on the real file: zero invoices where these vary across their
+// own lines), so buildARRows() collapses to one row per invoice using the
+// first line's values, same as Best Plumber's version, and excludes any
+// invoice whose Invoice Balance is blank or exactly 0 (neither is open AR).
+//
+// One deliberate difference from Best Plumber's version: this export
+// already carries ServiceTitan's own "Number of Days Outstanding" per
+// invoice, so that's used directly for aging instead of recomputing
+// days-since-invoice-date from today's date in JS — using ST's own number
+// avoids drift between dashboard refreshes and matches what ServiceTitan
+// itself reports. (Best Plumber's source export has no such column, hence
+// its own recompute.) Blank Campaign/Job Business Unit are left blank
+// (rendered "—"), NOT defaulted to a fallback label like "Uncategorized" —
+// on the real file these 84 blanks are membership-only invoices with no
+// linked job at all (Job Number/Business Unit/Campaign/Technician/Job Type
+// all blank together), a genuinely different meaning from the 32 invoices
+// that carry the real, tracked "_No Campaign" value. Collapsing both into
+// one label would conflate "not job-linked" with "job-linked, untracked".
+// ══════════════════════════════════════════════════════════════════════════
+
+const AR_CONFIG = {
+  // Blob-scoped SAS token (sr=b), valid through 2030-09-13.
+  sasUrl: "https://coolbreeze.blob.core.windows.net/coolbreeze/Invoices%20Service%20Titan.xlsx?sp=r&st=2026-09-12T17:18:32Z&se=2030-09-13T01:33:32Z&spr=https&sv=2026-02-06&sr=b&sig=qJ509t6hHituCL%2Bwsi1UukNDUhLu%2BqwtHdF%2F2BKLV%2FU%3D",
+  // No previous-years invoice export has been provided yet (mirrors how
+  // JOBS_CONFIG.sasUrlPrevYear started out blank) — fetchARPrevYearsBlob()
+  // below already no-ops gracefully while this stays unset. Wiring a prior-
+  // years feed in later (so a still-unpaid invoice from a prior year keeps
+  // showing up here) is just adding the URL here, same as the Jobs tab.
+  sasUrlPrevYears: null,
+};
+const REPORT_KEY_AR = 'invoicesServiceTitan';
+const REPORT_KEY_AR_PREV = 'invoicesServiceTitanPrevYears';
+
+let ALL_AR = [];
+let arDataReady = false;
+let arLoadedAt = null;
+let arSortKey = 'd8', arSortDir = 1;
+let arPage = 1;
+let arSearchQuery = '';
+let arSearchTimer;
+
+const AR_BUCKETS = ['Current (0-30 Days)','31-60 Days','61-90 Days','90+ Days','Credit Balance'];
+const AR_BUCKET_CLASS = {
+  'Current (0-30 Days)':'ar-current', '31-60 Days':'ar-3060', '61-90 Days':'ar-6090',
+  '90+ Days':'ar-90plus', 'Credit Balance':'ar-credit', 'Unknown':'ar-3060'
+};
+const AR_SORT_TH = {
+  invoiceNumber:'arth-invoiceNumber', customerName:'arth-customerName', d8:'arth-d8',
+  daysOutstanding:'arth-daysOutstanding', agingBucket:'arth-agingBucket', balance:'arth-balance',
+  amountPaid:'arth-amountPaid', subtotal:'arth-subtotal', lastPaidD8:'arth-lastPaidD8',
+  status:'arth-status', bizUnit:'arth-bizUnit', jobNumber:'arth-jobNumber', jobType:'arth-jobType',
+  technician:'arth-technician', campaign:'arth-campaign',
+};
+
+async function fetchARBlob(){ return fetchBlobXLSX(AR_CONFIG.sasUrl); }
+async function fetchARPrevYearsBlob(){
+  if(!AR_CONFIG.sasUrlPrevYears) return null;
+  try{ return await fetchBlobXLSX(AR_CONFIG.sasUrlPrevYears); }
+  catch(e){ console.warn('[AR] Previous-years blob fetch failed (non-fatal — current-year data still loads):', e.message); return null; }
+}
+
+// Accepts one or more sheetRows datasets (each its own array-of-arrays with
+// its own header row in position 0), same pattern as Jobs/Best Plumber's AR
+// tab, so a future previous-years feed merges in without restructuring this
+// function — see AR_CONFIG.sasUrlPrevYears. Datasets are processed in the
+// order passed in; if the same Invoice Number ever appeared in more than
+// one file, whichever dataset comes first wins. Falsy datasets (e.g. a
+// previous-years fetch that failed) are skipped.
+function buildARRows(...datasets){
+  const need = ['Invoice Number','Invoice Date','Last Paid Date','Invoice Subtotal','Invoice Balance','Customer Name','Job Number','Job Business Unit','Job Type','Primary Technician','Campaign','Status','Number of Days Outstanding'];
+  const byInvoice = new Map();
+  datasets.filter(d=>d && d.length>=2).forEach(sheetRows=>{
+    const headers = sheetRows[0].map(h=>String(h||'').trim());
+    const C = {}; headers.forEach((h,i)=>{ if(h) C[h]=i; });
+    const missing = need.filter(h=>C[h]==null);
+    if(missing.length){ console.error('[AR] Missing expected column(s) in an invoice feed:', missing); return; }
+    sheetRows.slice(1).forEach(r=>{
+      const inv = String(r[C['Invoice Number']]==null ? '' : r[C['Invoice Number']]).trim();
+      if(!inv || byInvoice.has(inv)) return;
+      byInvoice.set(inv, {
+        invoiceNumber: inv,
+        invoiceDateRaw: r[C['Invoice Date']],
+        lastPaidDateRaw: r[C['Last Paid Date']],
+        subtotal: r[C['Invoice Subtotal']],
+        balance: r[C['Invoice Balance']],
+        daysOutRaw: r[C['Number of Days Outstanding']],
+        customerName: r[C['Customer Name']]||'',
+        jobNumber: r[C['Job Number']]||'',
+        bizUnit: r[C['Job Business Unit']]||'',
+        jobType: r[C['Job Type']]||'',
+        technician: r[C['Primary Technician']]||'',
+        campaign: r[C['Campaign']]||'',
+        status: r[C['Status']]||'',
+      });
+    });
+  });
+  if(!byInvoice.size) return [];
+  const out = [];
+  byInvoice.forEach(row=>{
+    if(row.balance===null || row.balance===undefined || row.balance==='' || Number(row.balance)===0) return;
+    const bal = Number(row.balance)||0;
+    const sub = Number(row.subtotal)||0;
+    const invDate = sd(row.invoiceDateRaw);
+    const lastPaid = sd(row.lastPaidDateRaw);
+    const daysOutNum = (row.daysOutRaw===null||row.daysOutRaw===undefined||row.daysOutRaw==='') ? NaN : Number(row.daysOutRaw);
+    const daysOut = isNaN(daysOutNum) ? null : daysOutNum;
+    let agingBucket;
+    if(bal<0) agingBucket = 'Credit Balance';
+    else if(daysOut===null) agingBucket = 'Unknown';
+    else if(daysOut<=30) agingBucket = 'Current (0-30 Days)';
+    else if(daysOut<=60) agingBucket = '31-60 Days';
+    else if(daysOut<=90) agingBucket = '61-90 Days';
+    else agingBucket = '90+ Days';
+    out.push({
+      invoiceNumber: row.invoiceNumber, customerName: row.customerName,
+      d8: isoDay(invDate), daysOutstanding: daysOut,
+      agingBucket, balance: bal, subtotal: sub, amountPaid: round2(sub-bal),
+      lastPaidD8: isoDay(lastPaid),
+      status: row.status, bizUnit: row.bizUnit, jobNumber: row.jobNumber,
+      jobType: row.jobType, technician: row.technician, campaign: row.campaign,
+    });
+  });
+  out.sort((a,b)=>(a.d8||'').localeCompare(b.d8||''));
+  return out;
+}
+
+// ── CONSTRUCTION REVENUE (job-less invoices) ──
+// Coolbreeze is a new-construction company doing progressive billing:
+// ServiceTitan invoices those jobs without a Job Number attached. But the
+// SAME "no Job Number" invoices can also carry membership billing
+// (Membership Agreements / Membership Revenue) and a few other stray
+// Job Income lines that aren't construction — so instead of treating
+// every no-Job-Number invoice as Construction revenue, this filters at
+// the LINE-ITEM level to the specific GL account ServiceTitan posts
+// construction billing to ("Job Income:Construction Job"). Verified
+// against the real Sep 2026 export: of $2.00M in no-Job-Number Invoice
+// Subtotal, $1.95M (97%) is this GL account; the remaining ~$55K is
+// membership/other job income and is correctly excluded here.
+// Unlike buildARRows (one row per invoice, using invoice-level Invoice
+// Subtotal/Balance), this is intentionally line-item level and uses each
+// line's own Item Price, since Total Revenue must include fully-paid
+// invoices too, not just the open-balance ones AR tracks.
+let CONSTRUCTION_REV = []; // [{d8, amount}]
+function buildConstructionRevenueRows(...datasets){
+  const need = ['Job Number','Item GL Account Name','Item Price','Invoice Date'];
+  const out = [];
+  datasets.filter(d=>d && d.length>=2).forEach(sheetRows=>{
+    const headers = sheetRows[0].map(h=>String(h||'').trim());
+    const C = {}; headers.forEach((h,i)=>{ if(h) C[h]=i; });
+    const missing = need.filter(h=>C[h]==null);
+    if(missing.length){ console.error('[ConstructionRev] Missing expected column(s) in an invoice feed:', missing); return; }
+    sheetRows.slice(1).forEach(r=>{
+      const jobNum = String(r[C['Job Number']]==null ? '' : r[C['Job Number']]).trim();
+      if(jobNum) return; // has a Job Number — that's Service revenue, handled by the Jobs tab itself
+      const gl = String(r[C['Item GL Account Name']]||'').trim();
+      if(gl!=='Job Income:Construction Job') return;
+      const d8 = isoDay(sd(r[C['Invoice Date']]));
+      if(!d8) return;
+      out.push({ d8, amount: Number(r[C['Item Price']])||0 });
+    });
+  });
+  return out;
+}
+function constructionRevForRange(from,to){
+  return CONSTRUCTION_REV.reduce((s,r)=>{
+    if(from&&r.d8<from) return s;
+    if(to&&r.d8>to) return s;
+    return s+r.amount;
+  },0);
+}
+function monthlyConstructionRevForYear(y){
+  const sums=Array(12).fill(0);
+  CONSTRUCTION_REV.forEach(r=>{
+    const yy=parseInt(r.d8.slice(0,4),10),mm=parseInt(r.d8.slice(5,7),10);
+    if(yy===y) sums[mm-1]+=r.amount;
+  });
+  return sums;
+}
+
+function currentARRows(){
+  let list = ALL_AR.slice();
+  if(arSearchQuery){
+    list = list.filter(r=>((r.invoiceNumber||'')+' '+(r.customerName||'')+' '+(r.jobNumber||'')+' '+(r.campaign||'')+' '+(r.technician||'')).toLowerCase().includes(arSearchQuery));
+  }
+  list.sort((a,b)=>{
+    let av=a[arSortKey], bv=b[arSortKey];
+    if(typeof av==='string') av=av.toLowerCase();
+    if(typeof bv==='string') bv=bv.toLowerCase();
+    if(av==null) av = -Infinity; if(bv==null) bv = -Infinity;
+    if(av<bv) return arSortDir===1?-1:1;
+    if(av>bv) return arSortDir===1?1:-1;
+    return 0;
+  });
+  return list;
+}
+
+function renderARKPIs(){
+  const open = ALL_AR.filter(r=>r.balance>0);
+  const credit = ALL_AR.filter(r=>r.balance<0);
+  const totalOpen = open.reduce((s,r)=>s+r.balance,0);
+  const totalCredit = credit.reduce((s,r)=>s+r.balance,0);
+  const over90 = open.filter(r=>r.agingBucket==='90+ Days');
+  const over90Sum = over90.reduce((s,r)=>s+r.balance,0);
+  const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
+  set('ark-open', fmtM(totalOpen));
+  set('ark-open-sub', open.length.toLocaleString()+' open invoice(s)');
+  set('ark-90', fmtM(over90Sum));
+  set('ark-90-sub', over90.length.toLocaleString()+' invoice(s) at risk');
+  set('ark-count', open.length.toLocaleString());
+  set('ark-credit', fmtM(totalCredit));
+  set('ark-credit-sub', credit.length.toLocaleString()+' customer overpayment(s)');
+}
+
+function renderARAgingTable(){
+  const open = ALL_AR.filter(r=>r.balance>0);
+  const totalOpen = open.reduce((s,r)=>s+r.balance,0);
+  const body=document.getElementById('arAgingBody');
+  if(!body) return;
+  const rowsHtml = AR_BUCKETS.map(b=>{
+    const inBucket = ALL_AR.filter(r=>r.agingBucket===b);
+    const amt = inBucket.reduce((s,r)=>s+r.balance,0);
+    const pct = (b==='Credit Balance') ? 'n/a' : (totalOpen ? Math.round(amt/totalOpen*1000)/10+'%' : '0%');
+    return `<tr><td><span class="status-pill ${AR_BUCKET_CLASS[b]||''}">${esc(b)}</span></td><td>${inBucket.length}</td><td class="td-val">${fmtFull(amt)}</td><td>${pct}</td></tr>`;
+  }).join('');
+  body.innerHTML = rowsHtml || '<tr><td colspan="4" style="text-align:center;color:var(--gray-500);padding:20px">No open invoices.</td></tr>';
+}
+
+function renderARDetail(){
+  const body=document.getElementById('arDetailBody');
+  if(!body) return;
+  if(!arDataReady){ body.innerHTML='<tr><td colspan="16" class="mkt-placeholder">Loading…</td></tr>'; return; }
+  const list=currentARRows();
+  const cntEl=document.getElementById('ar-detail-count');
+  if(cntEl) cntEl.textContent=list.length.toLocaleString()+' invoice(s)';
+  Object.values(AR_SORT_TH).forEach(id=>{ const th=document.getElementById(id); if(th) th.classList.remove('sort-asc','sort-desc'); });
+  const activeTh=document.getElementById(AR_SORT_TH[arSortKey]);
+  if(activeTh) activeTh.classList.add(arSortDir===1?'sort-asc':'sort-desc');
+  if(!list.length){
+    body.innerHTML='<tr><td colspan="16" style="text-align:center;color:var(--gray-500);padding:20px">No invoices match the current search.</td></tr>';
+    renderJobPagination('arDetailPagination', 0, 1, 'goARPage');
+    return;
+  }
+  const totalPages=Math.max(1,Math.ceil(list.length/PAGE_SIZE));
+  if(arPage>totalPages) arPage=totalPages;
+  const start=(arPage-1)*PAGE_SIZE;
+  const page=list.slice(start,start+PAGE_SIZE);
+  body.innerHTML=page.map(r=>`<tr>
+    <td class="mono">${esc(r.invoiceNumber)}</td>
+    <td class="td-cust">${esc(r.customerName)||'—'}</td>
+    <td style="white-space:nowrap">${r.d8?fmtDate(new Date(r.d8+'T00:00:00')):'—'}</td>
+    <td>${r.daysOutstanding==null?'—':r.daysOutstanding}</td>
+    <td><span class="status-pill ${AR_BUCKET_CLASS[r.agingBucket]||''}">${esc(r.agingBucket)}</span></td>
+    <td class="td-val">${fmtFull(r.balance)}</td>
+    <td class="td-val">${fmtFull(r.amountPaid)}</td>
+    <td class="td-val">${fmtFull(r.subtotal)}</td>
+    <td style="white-space:nowrap">${r.lastPaidD8?fmtDate(new Date(r.lastPaidD8+'T00:00:00')):'—'}</td>
+    <td>${esc(r.status)||'—'}</td>
+    <td>${esc(r.bizUnit)||'—'}</td>
+    <td class="mono">${esc(r.jobNumber)||'—'}</td>
+    <td>${stJobLink(r.jobNumber)}</td>
+    <td>${esc(r.jobType)||'—'}</td>
+    <td>${esc(r.technician)||'—'}</td>
+    <td>${esc(r.campaign)||'—'}</td>
+  </tr>`).join('');
+  renderJobPagination('arDetailPagination', list.length, arPage, 'goARPage');
+}
+
+function renderARTab(){
+  renderARKPIs();
+  renderARAgingTable();
+  renderARDetail();
+  const finfo=document.getElementById('ar-finfo');
+  if(finfo) finfo.textContent = arLoadedAt ? 'Last refreshed '+fmtDate(arLoadedAt)+' · '+ALL_AR.filter(r=>r.balance>0).length.toLocaleString()+' open invoice(s)' : 'Loading invoice data…';
+}
+
+function sortAR(key){ if(arSortKey===key) arSortDir*=-1; else { arSortKey=key; arSortDir=1; } renderARDetail(); }
+function goARPage(p){ arPage=p; renderARDetail(); }
+function onARSearchInput(v){
+  clearTimeout(arSearchTimer);
+  arSearchTimer=setTimeout(()=>{ arSearchQuery=String(v||'').trim().toLowerCase(); arPage=1; renderARDetail(); },200);
+}
+function exportARXLSX(){
+  const rows=currentARRows();
+  exportJobsXLSX('Coolbreeze_AccountsReceivable_'+todayISO()+'.xlsx',
+    ['Invoice #','Customer','Invoice Date','Days Outstanding','Aging Bucket','Open Balance','Amount Paid','Invoice Subtotal','Last Paid Date','ST Status','Business Unit','Job #','Job Type','Technician','Campaign / Source'],
+    rows.map(r=>[r.invoiceNumber, r.customerName, r.d8?fmtDate(new Date(r.d8+'T00:00:00')):'—', r.daysOutstanding==null?'':r.daysOutstanding, r.agingBucket, r.balance, r.amountPaid, r.subtotal, r.lastPaidD8?fmtDate(new Date(r.lastPaidD8+'T00:00:00')):'—', r.status, r.bizUnit, r.jobNumber, r.jobType, r.technician, r.campaign]));
+}
+
+async function loadAndInitAR(){
+  const finfo=document.getElementById('ar-finfo');
+  const cached=getCached(REPORT_KEY_AR);
+  const cachedPrev=getCached(REPORT_KEY_AR_PREV);
+  if(cached){
+    ALL_AR=buildARRows(cached,cachedPrev);
+    CONSTRUCTION_REV=buildConstructionRevenueRows(cached,cachedPrev);
+    arDataReady=true; arLoadedAt=new Date();
+    renderARTab();
+    if(typeof refreshJobsAfterARLoad==='function') refreshJobsAfterARLoad();
+    try{
+      const [rows,prevRows]=await Promise.all([fetchARBlob(),fetchARPrevYearsBlob()]);
+      setCache(REPORT_KEY_AR,rows);
+      if(prevRows)setCache(REPORT_KEY_AR_PREV,prevRows);
+      ALL_AR=buildARRows(rows,prevRows||cachedPrev);
+      CONSTRUCTION_REV=buildConstructionRevenueRows(rows,prevRows||cachedPrev);
+      arLoadedAt=new Date();
+      renderARTab();
+      if(typeof refreshJobsAfterARLoad==='function') refreshJobsAfterARLoad();
+    }catch(e){
+      console.warn('[AR bg refresh failed]',e);
+      if(finfo) finfo.textContent+=' · ⚠ refresh failed: '+e.message.slice(0,80);
+    }
+    return;
+  }
+  try{
+    if(finfo) finfo.textContent='Connecting to Azure…';
+    const [rows,prevRows]=await Promise.all([fetchARBlob(),fetchARPrevYearsBlob()]);
+    setCache(REPORT_KEY_AR,rows);
+    if(prevRows)setCache(REPORT_KEY_AR_PREV,prevRows);
+    ALL_AR=buildARRows(rows,prevRows);
+    CONSTRUCTION_REV=buildConstructionRevenueRows(rows,prevRows);
+    arDataReady=true; arLoadedAt=new Date();
+    renderARTab();
+    if(typeof refreshJobsAfterARLoad==='function') refreshJobsAfterARLoad();
+  }catch(e){
+    console.error('[AR] Load error:',e);
+    arDataReady=true;
+    if(finfo) finfo.textContent='⚠ Failed to load: '+e.message;
+    const body=document.getElementById('arDetailBody');
+    if(body) body.innerHTML=`<tr><td colspan="16" style="text-align:center;color:var(--gray-500);padding:20px">Couldn't load the invoice feed: ${esc(e.message||e)}</td></tr>`;
+  }
+}
+
+// Add the AR cache keys to "Hard Refresh" (clearAllCache) too.
+const _origClearAllCache4=clearAllCache;
+clearAllCache=function(){
+  _origClearAllCache4();
+  try{ localStorage.removeItem('cb_'+REPORT_KEY_AR); }catch(e){}
+  try{ localStorage.removeItem('cb_'+REPORT_KEY_AR_PREV); }catch(e){}
+};
+
+document.addEventListener('DOMContentLoaded', loadAndInitAR);
 </script>
 
 </body>
