@@ -477,11 +477,11 @@ td.mkt-placeholder-cell{color:var(--gray-500)}
     <div class="tbl-wrap">
       <table>
         <thead><tr>
-          <th>Status</th>
-          <th>Customer</th>
-          <th>QB Balance</th>
-          <th>ST Balance</th>
-          <th>Difference</th>
+          <th onclick="sortMemRecon('status')" id="mrth-status">Status</th>
+          <th onclick="sortMemRecon('customer')" id="mrth-customer">Customer</th>
+          <th onclick="sortMemRecon('qbAmount')" id="mrth-qbAmount">QB Balance</th>
+          <th onclick="sortMemRecon('stAmount')" id="mrth-stAmount">ST Balance</th>
+          <th onclick="sortMemRecon('absDiff')" id="mrth-absDiff" class="sort-desc">Difference</th>
           <th>ST Membership</th>
           <th>ServiceTitan</th>
         </tr></thead>
@@ -2662,8 +2662,33 @@ function renderMembershipChart(){
 }
 
 const MEM_ROW_CAP=500; // DOM-size safety cap, same pattern as Vendor Coverage
+
+// Sortable-column state for the Membership Balance Reconciliation table
+// (added 2026-09-16 per Ariel — click QB Balance / ST Balance / etc. to
+// sort, same click-header convention as the Jobs/AR/Memberships tabs'
+// own detail tables). Default preserves the table's original hardcoded
+// behavior: worst discrepancies first.
+let memReconSortKey='absDiff', memReconSortDir=-1;
+const MEM_RECON_SORT_TH={status:'mrth-status', customer:'mrth-customer', qbAmount:'mrth-qbAmount', stAmount:'mrth-stAmount', absDiff:'mrth-absDiff'};
+function sortMemRecon(key){
+  if(memReconSortKey===key) memReconSortDir*=-1;
+  else { memReconSortKey=key; memReconSortDir=(key==='customer'||key==='status')?1:-1; }
+  renderMembershipTable();
+}
+
 function renderMembershipTable(){
-  const sorted=[...MEM_FILTERED].sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
+  const sorted=[...MEM_FILTERED].sort((a,b)=>{
+    let av,bv;
+    if(memReconSortKey==='absDiff'){ av=Math.abs(a.diff); bv=Math.abs(b.diff); }
+    else if(memReconSortKey==='customer'){ av=(a.customer||'').toLowerCase(); bv=(b.customer||'').toLowerCase(); }
+    else { av=a[memReconSortKey]; bv=b[memReconSortKey]; if(av==null) av=-Infinity; if(bv==null) bv=-Infinity; }
+    if(av<bv) return memReconSortDir===1?-1:1;
+    if(av>bv) return memReconSortDir===1?1:-1;
+    return 0;
+  });
+  Object.values(MEM_RECON_SORT_TH).forEach(id=>{ const th=document.getElementById(id); if(th) th.classList.remove('sort-asc','sort-desc'); });
+  const activeTh=document.getElementById(MEM_RECON_SORT_TH[memReconSortKey]);
+  if(activeTh) activeTh.classList.add(memReconSortDir===1?'sort-asc':'sort-desc');
   const rows=sorted.slice(0,MEM_ROW_CAP);
   document.getElementById('memBody').innerHTML=rows.map(r=>{
     const meta=STATUS_META[r.status];
