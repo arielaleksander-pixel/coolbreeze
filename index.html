@@ -23,8 +23,20 @@
       Coverage's Purchase Orders data have both since moved off GAS_URL onto
       direct Azure Blob fetches (QB_BILLS_CONFIG / PO_CONFIG, same pattern
       as the Jobs/Estimates tabs below) — see fetchQBBillsBlob() and
-      fetchVendorTxnsBlob(). GAS_URL is still used for servicetitanBills and
-      the two Membership Balance reports.
+      fetchVendorTxnsBlob(). ServiceTitan Membership Balance moved to Azure
+      the same day (ST_MEMBERSHIP_CONFIG).
+    - UPDATE 2026-09-18: the ServiceTitan side of the Bills Reconciliation
+      tab (previously GAS_URL '?report=servicetitanBills') also moved to
+      Azure — per Ariel's request, it now reuses the SAME Purchase Order
+      Reconciliation blob as Vendor Invoice Coverage (PO_CONFIG), filtered
+      down to Transaction Type = "Bill" — see fetchSTBillsBlob(). QuickBooks
+      Membership Balance (apiKey quickbooksMembership) also moved to Azure
+      the same day (QB_MEMBERSHIP_CONFIG) — this was the last report still
+      on GAS_URL, so nothing on this dashboard fetches from Apps Script
+      anymore (fetchReport()/fetchReportWithRetry()/GAS_URL are left in
+      place, unused, rather than deleted). Ariel's stated direction going
+      forward: all new Coolbreeze dashboards/reports should pull from Azure
+      rather than Apps Script.
 
   ── THINGS TO CONFIRM / ADJUST BEFORE GOING LIVE ──
   1) REPORT KEYS (below, in CONFIG): this file calls
@@ -152,6 +164,10 @@ header{background:var(--navy);padding:0 32px;display:flex;align-items:center;jus
 .chart-yr-sel{margin-left:auto;height:26px;padding:0 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:11px;font-weight:600;color:var(--gray-700);background:#fff;cursor:pointer;outline:none;text-transform:none;letter-spacing:normal}
 .ct::before{content:'';display:block;width:3px;height:14px;background:var(--accent);border-radius:2px}
 .chart-wrap{position:relative}
+.fn-seg{cursor:help}
+.fn-row-lbl{font-size:11.5px;font-weight:700;color:var(--gray-700)}
+.fn-row-sub{font-size:11px;color:var(--gray-500);margin-top:2px}
+
 
 /* ── TABLE ── */
 .tcard{background:#fff;border-radius:var(--radius);padding:20px 22px;box-shadow:var(--shadow);margin-bottom:24px}
@@ -916,8 +932,27 @@ td.mkt-placeholder-cell{color:var(--gray-500)}
   </div>
 
   <div class="card" style="margin-bottom:20px">
-    <div class="ct">Calls-to-Sale Funnel <span class="tip-ic" data-tip="Needs the Estimates file and ad spend feeds in addition to Calls, Web Bookings and Manual Calls. Awaiting those data sources.">ⓘ</span></div>
-    <div class="mkt-placeholder">Awaiting data source — Calls-to-Sale Funnel needs Estimates and Spend to be connected</div>
+    <div class="ct">Calls-to-Sale Funnel <span class="tip-ic" data-tip="Live from Calls + Web Bookings + Manual Calls + the Estimates file, for the selected date range and filters. Total Calls (every call, any type) → Leads (Lead Calls + Web Bookings + Manual Calls) → Booked (Leads minus Unbooked minus Cancellations — same math as the Total Opportunities KPI) → Sale (Estimates Subtotal summed across Sold estimates, dated by Sold On, company-wide — Estimates carry no Call/Web Booking reference to tie a dollar figure back to a specific lead/campaign). Impressions → Clicks stages will be added once ad-spend data is connected. Hover a band for the counts behind it.">ⓘ</span></div>
+    <div style="display:flex;align-items:stretch;gap:14px;min-height:300px">
+      <div style="flex:0 0 34%;display:flex;flex-direction:column;justify-content:space-around">
+        <div>
+          <div class="fn-row-lbl">Lead Rate</div>
+          <div class="fn-row-sub">Leads ÷ Total Calls</div>
+        </div>
+        <div>
+          <div class="fn-row-lbl">Booking Rate</div>
+          <div class="fn-row-sub">Booked ÷ Leads</div>
+        </div>
+        <div>
+          <div class="fn-row-lbl">Sale</div>
+          <div class="fn-row-sub">Sold Estimates ($), company-wide</div>
+        </div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <svg id="mktCallsFunnelSvg" viewBox="0 0 240 300" style="width:100%;max-width:230px;height:auto"></svg>
+        <span class="tcnt" id="mktCallsFunnel-count" style="margin-top:6px">—</span>
+      </div>
+    </div>
   </div>
 
   <div class="tcard" style="margin-bottom:20px">
@@ -1235,7 +1270,7 @@ td.mkt-placeholder-cell{color:var(--gray-500)}
   </div>
 
   <div class="row2" style="margin-bottom:20px">
-    <div class="card"><div class="ct">Status Breakdown</div><div class="chart-wrap" style="height:250px"><canvas id="memStatusChart"></canvas></div></div>
+    <div class="card"><div class="ct">Membership Type Breakdown (Active) <span class="tip-ic" data-tip="Active memberships only, by base plan (Classic / Performance / Essential).">ⓘ</span></div><div class="chart-wrap" style="height:250px"><canvas id="memStatusChart"></canvas></div></div>
     <div class="card"><div class="ct">Plan Type by Status <span class="tip-ic" data-tip="Membership Type collapsed to its base plan (Classic / Performance / Essential), stacked by Current Status.">ⓘ</span></div><div class="chart-wrap" style="height:250px"><canvas id="memPlanStatusChart"></canvas></div></div>
   </div>
 
@@ -1254,6 +1289,19 @@ td.mkt-placeholder-cell{color:var(--gray-500)}
       <table>
         <thead><tr><th>Customer</th><th>Plan</th><th>Renewal/End Date</th><th>Days Until</th><th>Last Billing Amount</th></tr></thead>
         <tbody id="memRenewalsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tcard" style="margin-bottom:20px">
+    <div class="thead-row">
+      <div class="tcard-title">⚠ Data Warnings <span class="tip-ic" data-tip="Two Active-membership checks: an Ongoing (no fixed term) plan with a $0 Billing Template Total, and a negative Deferred Revenue Balance. Both flag Active rows worth a closer look.">ⓘ</span></div>
+      <div class="thead-right"><span class="tcnt" id="mem2-warnings-count">— warning(s)</span></div>
+    </div>
+    <div class="tbl-wrap" style="max-height:280px">
+      <table>
+        <thead><tr><th>Customer</th><th>Plan</th><th>Warning</th><th>Detail</th><th>Open</th></tr></thead>
+        <tbody id="memWarningsBody"></tbody>
       </table>
     </div>
   </div>
@@ -1280,7 +1328,7 @@ td.mkt-placeholder-cell{color:var(--gray-500)}
           <th onclick="sortMem('deferredBalance')" id="m2th-deferredBalance">Deferred Balance</th>
           <th onclick="sortMem('recognizedRevenue')" id="m2th-recognizedRevenue">Recognized Revenue</th>
           <th onclick="sortMem('paymentMethodCat')" id="m2th-paymentMethodCat">Payment Method</th>
-          <th onclick="sortMem('locationId')" id="m2th-locationId">Location ID</th>
+          <th>Open</th>
         </tr></thead>
         <tbody id="memDetailBody2"></tbody>
       </table>
@@ -1307,14 +1355,12 @@ td.mkt-placeholder-cell{color:var(--gray-500)}
 // ══════════════════════════════════════════════════════════════════════════
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbxROkWLe7uY8peQzXTCxLXkykB-GjX6_fBUAu4vhtLWC-FasTeuVi5i8jEFeaD6d1NH/exec';
 
-// The two report keys requested via GAS_URL+'?report='+KEY, same convention
-// as Sunline's '?report=estimates' / '?report=jobs'. Change these if the
-// Apps Script's doGet(e) branches on different key names.
-// quickbooksBills is still the localStorage cache key ('cb_quickbooksBills')
-// for the QuickBooks Bills report, but as of 2026-09-12 it is no longer
-// fetched via GAS_URL either — see QB_BILLS_CONFIG below and
-// fetchQBBillsBlob() for the new Azure Blob source (servicetitanBills is
-// unchanged, still via Apps Script, until/unless that one moves too).
+// quickbooksBills and servicetitanBills are now just the localStorage cache
+// keys ('cb_quickbooksBills' / 'cb_servicetitanBills') for the Bills
+// Reconciliation tab's two sides — neither is fetched via GAS_URL+'?report='
+// anymore. quickbooksBills moved to Azure on 2026-09-12 (QB_BILLS_CONFIG,
+// fetchQBBillsBlob()); servicetitanBills moved on 2026-09-18 (reuses
+// PO_CONFIG, fetchSTBillsBlob() — filtered to Transaction Type="Bill").
 const REPORT_KEY_QB = 'quickbooksBills';
 const REPORT_KEY_ST = 'servicetitanBills';
 // vendorTransactions is still the localStorage cache key ('cb_vendorTransactions')
@@ -1391,7 +1437,7 @@ const NO_ST_MATCH_ACCOUNTS=new Set(['supplies (shop)']);
 const PO_CONFIG = {
   // Blob-scoped SAS token (sr=b), valid through 2030-09-12 — same
   // container-account convention as JOBS_CONFIG/ESTIMATES_CONFIG.
-  sasUrl: 'https://coolbreeze.blob.core.windows.net/coolbreeze/Purchase%20Orders%20This%20Year.xlsx?sp=r&st=2026-09-12T12:46:41Z&se=2030-09-12T21:01:41Z&spr=https&sv=2026-02-06&sr=b&sig=u9T%2FIM3CaIWFyrOAVzmUMzWnyeDMywOvcHckF1w%2BLYo%3D'
+  sasUrl: 'https://coolbreeze.blob.core.windows.net/coolbreeze/Purchase%20Orders%20This%20Year.xlsx?sp=r&st=2026-09-18T14:24:05Z&se=2030-09-18T22:39:05Z&spr=https&sv=2026-02-06&sr=b&sig=YOpQ71y5khzIcT9OmjLTP3y7V%2BouzXpJGxx1JW9XjXo%3D'
 };
 
 // QuickBooks Bills report (Bills Reconciliation tab, QuickBooks side) — as
@@ -1410,7 +1456,7 @@ const PO_CONFIG = {
 // export-timestamp row, all trimmed by the same function.
 const QB_BILLS_CONFIG = {
   // Blob-scoped SAS token (sr=b), valid through 2030-09-12.
-  sasUrl: 'https://coolbreeze.blob.core.windows.net/coolbreeze/Bills%20Quickbooks.xlsx?sp=r&st=2026-09-12T13:34:59Z&se=2030-09-12T21:49:59Z&spr=https&sv=2026-02-06&sr=b&sig=%2FVkVSPQJUQ3TxsP24T3psp7KIU329nv1AA416kMn5UU%3D'
+  sasUrl: 'https://coolbreeze.blob.core.windows.net/coolbreeze/Bills%20Quickbooks.xlsx?sp=r&st=2026-09-18T14:25:02Z&se=2030-09-18T22:40:02Z&spr=https&sv=2026-02-06&sr=b&sig=zzOfMtzMLnxIZRvilM58tY5yRlgt305vUCUbn6nBXZ8%3D'
 };
 
 // ServiceTitan Membership Balance report (Membership Reconciliation tab, ST
@@ -1427,11 +1473,38 @@ const QB_BILLS_CONFIG = {
 // changes; fetchBlobXLSX()'s header:1 array-of-arrays output is converted
 // to header-keyed objects by the existing toObjects() helper, same as the
 // GAS-JSON shape it replaces. QuickBooks Membership Balance (the deferred-
-// balance ledger, apiKey quickbooksMembership) is UNCHANGED, still fetched
-// via GAS_URL — Ariel only sent the ServiceTitan-side export this time.
+// balance ledger, apiKey quickbooksMembership) ALSO moved to Azure on
+// 2026-09-18 (QB_MEMBERSHIP_CONFIG below) — this was the last report on
+// the whole dashboard still going through GAS_URL; nothing does anymore
+// (fetchReport()/fetchReportWithRetry()/GAS_URL are left in place, unused,
+// rather than deleted — same low-risk-diff convention as other dead code
+// noted elsewhere in this file).
 const ST_MEMBERSHIP_CONFIG = {
   // Blob-scoped SAS token (sr=b), valid through 2030-09-16 (refreshed 2026-09-16).
   sasUrl: 'https://coolbreeze.blob.core.windows.net/coolbreeze/Memberships.xlsx?sp=r&st=2026-09-16T10:59:36Z&se=2030-09-16T19:14:36Z&spr=https&sv=2026-02-06&sr=b&sig=k5gVp1OV4nSmX7p%2F%2FLb9oq%2B0rdTCF3g%2Bda1XrctrHa8%3D'
+};
+// QuickBooks Membership Balance report (Membership Reconciliation tab, QB
+// side) — as of 2026-09-18, per Ariel's request, moved off GAS_URL onto a
+// direct Azure Blob fetch (see fetchQBMembershipBlob() below). This is a QB
+// "Account QuickReport" for the Membership Agreements account — the SAME
+// title-block-before-header / footer-total-rows / timestamp-row shape as
+// QB_BILLS_CONFIG's export (title block: company name, "Account
+// QuickReport", "All Dates", blank row; then the real header row; then a
+// single mid-file "Membership Agreements" account-section-label row with
+// only 1 populated cell; then per-transaction rows; then "Total for
+// Membership Agreements"/"TOTAL" rows, blank rows, and an export-timestamp
+// row) — trimQBBillsReportChrome() handles the leading/trailing chrome
+// exactly like it already does for QB Bills, and the lone mid-file section-
+// label row is separately absorbed for free: buildMembershipReconciliation()
+// already skips any row with a blank customer name (its `if(!customer)
+// return;` guard), and that section-label row has no Customer value.
+// Columns: Distribution account, Transaction date, Transaction type
+// (Invoice/Credit Memo/Journal Entry), Num, Name, Description, Account
+// Name, Cleared, Amount, Balance, Customer, Transaction ID — matches
+// QB_MEMBERSHIP_FIELD_ALIASES above exactly, no changes needed there.
+const QB_MEMBERSHIP_CONFIG = {
+  // Blob-scoped SAS token (sr=b), valid through 2030-09-18.
+  sasUrl: 'https://coolbreeze.blob.core.windows.net/coolbreeze/Memberships%20Quickbooks.xlsx?sp=r&st=2026-09-18T15:32:46Z&se=2030-09-18T23:47:46Z&spr=https&sv=2026-02-06&sr=b&sig=kvUb7ZLJ3x3AtqxFExc5vlp6b%2B2YLwH7TFQWOOC9KUA%3D'
 };
 const VENDOR_TXN_FIELD_ALIASES = {
   vendor:     ['vendor name','vendor'],
@@ -2728,9 +2801,9 @@ async function loadAndInit(){
     try{
       const [qbRows,stRows,vendorTxnRows,qbMemRows,stMemRows]=await Promise.all([
         fetchQBBillsBlob().catch(e=>{console.warn('[QB bg]',e.message);return cachedQB;}),
-        fetchReportWithRetry(REPORT_KEY_ST).catch(e=>{console.warn('[ST bg]',e.message);return cachedST;}),
+        fetchSTBillsBlob().catch(e=>{console.warn('[ST bg]',e.message);return cachedST;}),
         fetchVendorTxnsBlob().catch(e=>{console.warn('[VendorTxns bg]',e.message);return cachedVendorTxns;}),
-        fetchReportWithRetry(REPORT_KEY_QB_MEMBERSHIP).catch(e=>{console.warn('[QB Membership bg]',e.message);return cachedQBMem;}),
+        fetchQBMembershipBlob().catch(e=>{console.warn('[QB Membership bg]',e.message);return cachedQBMem;}),
         fetchSTMembershipBlob().catch(e=>{console.warn('[ST Membership bg]',e.message);return cachedSTMem;})
       ]);
       if(qbRows)setCache(REPORT_KEY_QB,qbRows);
@@ -2753,16 +2826,16 @@ async function loadAndInit(){
     if(overlay)overlay.style.display='flex';
     const t0=Date.now();
     tick=setInterval(()=>{ const el=document.getElementById('load-timer'); if(el)el.textContent=((Date.now()-t0)/1000).toFixed(0)+'s elapsed'; },500);
-    setStep('Connecting to Google Drive…','Fetching QuickBooks, ServiceTitan, Vendor Transactions & Membership Balance reports');
+    setStep('Connecting to Azure…','Fetching QuickBooks, ServiceTitan, Vendor Transactions & Membership Balance reports');
     const [qbRows,stRows,vendorTxnRows,qbMemRows,stMemRows]=await Promise.all([
       fetchQBBillsBlob().catch(e=>{console.warn('[QB]',e.message);throw e;}),
-      fetchReportWithRetry(REPORT_KEY_ST).catch(e=>{console.warn('[ST]',e.message);throw e;}),
+      fetchSTBillsBlob().catch(e=>{console.warn('[ST]',e.message);throw e;}),
       // Non-fatal: the vendor-coverage and membership-balance sections are
       // bonus dimensions, not core to the dashboard — a hiccup in either
       // (e.g. sheet permissions, no report processed yet) shouldn't block
       // the rest of the dashboard from loading.
       fetchVendorTxnsBlob().catch(e=>{console.warn('[VendorTxns]',e.message);return [];}),
-      fetchReportWithRetry(REPORT_KEY_QB_MEMBERSHIP).catch(e=>{console.warn('[QB Membership]',e.message);return [];}),
+      fetchQBMembershipBlob().catch(e=>{console.warn('[QB Membership]',e.message);return [];}),
       fetchSTMembershipBlob().catch(e=>{console.warn('[ST Membership]',e.message);return [];})
     ]);
     clearInterval(tick);
@@ -3316,6 +3389,7 @@ function stJobLink(o){return o?`<a class="st-link" href="https://go.servicetitan
 // isn't tied to a job for membership-only invoices, so this deep-links to
 // ServiceTitan's own invoice editor by Invoice Number instead of the job.
 function stInvoiceLink(o){return o?`<a class="st-link" href="https://go.servicetitan.com/#/EditInvoice/${encodeURIComponent(o)}" target="_blank" rel="noopener">↗ Open</a>`:'—';}
+function stMembershipLink(o){return o?`<a class="st-link" href="https://go.servicetitan.com/#/FollowUps/Membership/${encodeURIComponent(o)}" target="_blank" rel="noopener">↗ Open</a>`:'—';}
 function renderJobPagination(elId,total,page,onPage){
   const el=document.getElementById(elId);
   const pages=Math.max(1,Math.ceil(total/JOB_PAGE_SIZE));
@@ -3399,6 +3473,28 @@ async function fetchBlobXLSX(url){
 // instead of its own DOMContentLoaded hook, since Vendor Invoice Coverage
 // already lives inside the main Bills-tab load/render cycle.
 async function fetchVendorTxnsBlob(){return fetchBlobXLSX(PO_CONFIG.sasUrl);}
+// ServiceTitan Bills report (Bills Reconciliation tab, ServiceTitan side) —
+// as of 2026-09-18, per Ariel's request, moved off GAS_URL ('?report=
+// servicetitanBills') onto Azure, reusing the SAME Purchase Order
+// Reconciliation blob as Vendor Invoice Coverage (PO_CONFIG) rather than a
+// separate dedicated export — ServiceTitan doesn't have a standalone
+// "Bills" export, but this PO Reconciliation report already contains every
+// Bill transaction (alongside Purchase Order/Receipt/Return/Transfer/
+// Adjustment rows the Bills tab doesn't want), so filtering to Transaction
+// Type="Bill" reproduces it. normalizeRows()'s existing isST branch already
+// reads this export's columns correctly (Date Created for the date,
+// Transaction Number as the bill number via the FIELD_ALIASES.billNumber
+// "number" fallback, Vendor Name/Total as-is) — the same column shape
+// normalizeVendorTxnRows() above already relies on — so no new column
+// mapping was needed, just this type filter.
+function filterSTBillsRows(rawRows){
+  const objs=toObjects(rawRows);
+  return objs.filter(o=>String(pickField(o,['transaction type'])||'').trim().toLowerCase()==='bill');
+}
+async function fetchSTBillsBlob(){
+  const rows=await fetchBlobXLSX(PO_CONFIG.sasUrl);
+  return filterSTBillsRows(rows);
+}
 // ServiceTitan Membership Balance source (see ST_MEMBERSHIP_CONFIG up top) —
 // same fetchBlobXLSX() helper, no chrome-trimming needed (clean header row).
 async function fetchSTMembershipBlob(){return fetchBlobXLSX(ST_MEMBERSHIP_CONFIG.sasUrl);}
@@ -3430,6 +3526,13 @@ function trimQBBillsReportChrome(rows){
 }
 async function fetchQBBillsBlob(){
   const rows=await fetchBlobXLSX(QB_BILLS_CONFIG.sasUrl);
+  return trimQBBillsReportChrome(rows);
+}
+// QuickBooks Membership Balance source (see QB_MEMBERSHIP_CONFIG up top) —
+// same title-block/footer chrome shape as QB Bills, so reuses
+// trimQBBillsReportChrome() as-is (no new trimming logic needed).
+async function fetchQBMembershipBlob(){
+  const rows=await fetchBlobXLSX(QB_MEMBERSHIP_CONFIG.sasUrl);
   return trimQBBillsReportChrome(rows);
 }
 
@@ -3516,8 +3619,15 @@ document.addEventListener('DOMContentLoaded',loadAndInitJobs);
 
 const ESTIMATES_CONFIG = {
   sasUrl: "https://coolbreeze.blob.core.windows.net/coolbreeze/Estimates%20Service%20Titan.xlsx?sp=r&st=2026-09-12T01:22:42Z&se=2030-09-12T09:37:42Z&spr=https&sv=2026-02-06&sr=b&sig=ZOkUzCAHYzezBXsqsgH9kRygRnpaKCaLiZtUkcZADk4%3D",
+  // Previous-year Estimates export — merged into ALL_ESTIMATES alongside the
+  // current one (see processEstimates). Optional: if this ever comes back
+  // empty/missing, fetchEstimatesPrevYearBlob() degrades non-fatally and the
+  // current-year data still loads on its own, same as the Jobs tab's
+  // JOBS_CONFIG.sasUrlPrevYear.
+  sasUrlPrevYear: "https://coolbreeze.blob.core.windows.net/coolbreeze/Estimates%20Previous%20Year.xlsx?sp=r&st=2026-09-18T13:48:22Z&se=2030-09-18T22:03:22Z&spr=https&sv=2026-02-06&sr=b&sig=HMnwbYFdGNsi%2FcHmtbynImWsYDs8lZtByh5gxd5MU3Q%3D",
 };
 const REPORT_KEY_ESTIMATES = 'estimatesServiceTitan';
+const REPORT_KEY_ESTIMATES_PREV = 'estimatesServiceTitanPrevYear';
 
 let estimatesDataReady = false;
 let estPotentialBasis = 'highest';
@@ -3588,9 +3698,9 @@ function parseEstimatesRows(rows){
   return out;
 }
 
-function processEstimates(rows){
-  ALL_ESTIMATES = parseEstimatesRows(rows);
-  console.log('[Estimates] Parsed', ALL_ESTIMATES.length, 'estimates');
+function processEstimates(rows,prevYearRows){
+  ALL_ESTIMATES = parseEstimatesRows(rows).concat(prevYearRows?parseEstimatesRows(prevYearRows):[]);
+  console.log('[Estimates] Parsed', ALL_ESTIMATES.length, 'estimates (including previous-year rows if provided)');
 }
 
 function estJobStatusMap(){
@@ -4103,21 +4213,35 @@ function resetEstFilters(){
 
 async function fetchEstimatesBlob(){ return fetchBlobXLSX(ESTIMATES_CONFIG.sasUrl); }
 
+async function fetchEstimatesPrevYearBlob(){
+  if(!ESTIMATES_CONFIG.sasUrlPrevYear)return null;
+  try{
+    return await fetchBlobXLSX(ESTIMATES_CONFIG.sasUrlPrevYear);
+  }catch(e){
+    console.warn('[Estimates] Previous-year blob fetch failed (non-fatal — current-year data still loads):',e.message);
+    return null;
+  }
+}
+
 async function loadAndInitEstimates(){
   document.getElementById('estDateFrom').value=monthStartISO();
   document.getElementById('estDateTo').value=todayISO();
 
   const cached=getCached(REPORT_KEY_ESTIMATES);
+  const cachedPrev=getCached(REPORT_KEY_ESTIMATES_PREV);
   if(cached){
-    processEstimates(cached);
+    processEstimates(cached,cachedPrev);
     estimatesDataReady=true;
     renderEstimatesTab();
+    if(typeof refreshMktAfterEstimatesLoad==='function') refreshMktAfterEstimatesLoad();
     document.getElementById('est-finfo').textContent=ALL_ESTIMATES.length.toLocaleString()+' estimate rows · cached, refreshing…';
     try{
-      const rows=await fetchEstimatesBlob();
+      const [rows,prevRows]=await Promise.all([fetchEstimatesBlob(),fetchEstimatesPrevYearBlob()]);
       setCache(REPORT_KEY_ESTIMATES, rows);
-      processEstimates(rows);
+      if(prevRows)setCache(REPORT_KEY_ESTIMATES_PREV, prevRows);
+      processEstimates(rows,prevRows||cachedPrev);
       renderEstimatesTab();
+      if(typeof refreshMktAfterEstimatesLoad==='function') refreshMktAfterEstimatesLoad();
     }catch(e){
       console.warn('[Estimates BG refresh failed]', e);
       document.getElementById('est-finfo').textContent+=' · ⚠ refresh failed: '+e.message.slice(0,80);
@@ -4127,22 +4251,25 @@ async function loadAndInitEstimates(){
 
   try{
     document.getElementById('est-finfo').textContent='Connecting to Azure…';
-    const rows=await fetchEstimatesBlob();
+    const [rows,prevRows]=await Promise.all([fetchEstimatesBlob(),fetchEstimatesPrevYearBlob()]);
     setCache(REPORT_KEY_ESTIMATES, rows);
-    processEstimates(rows);
+    if(prevRows)setCache(REPORT_KEY_ESTIMATES_PREV, prevRows);
+    processEstimates(rows,prevRows);
     estimatesDataReady=true;
     renderEstimatesTab();
+    if(typeof refreshMktAfterEstimatesLoad==='function') refreshMktAfterEstimatesLoad();
   }catch(e){
     console.error('[Estimates] Load error:', e);
     document.getElementById('est-finfo').textContent='⚠ Failed to load: '+e.message;
   }
 }
 
-// Add the Estimates cache key to "Hard Refresh" (clearAllCache) too.
+// Add the Estimates cache keys to "Hard Refresh" (clearAllCache) too.
 const _origClearAllCache2=clearAllCache;
 clearAllCache=function(){
   _origClearAllCache2();
   try{ localStorage.removeItem('cb_'+REPORT_KEY_ESTIMATES); }catch(e){}
+  try{ localStorage.removeItem('cb_'+REPORT_KEY_ESTIMATES_PREV); }catch(e){}
 };
 
 document.addEventListener('DOMContentLoaded', loadAndInitEstimates);
@@ -4559,9 +4686,106 @@ function updateOverviewKPIs(){
     setTxt('mk-leads', totalLeads.toLocaleString());
     setTxt('mk-opps', totalOpps.toLocaleString());
     if(finfo) finfo.textContent = totalLeads.toLocaleString()+' total leads ('+leadCalls.toLocaleString()+' calls + '+webLeads.toLocaleString()+' web bookings + '+manualLeads.toLocaleString()+' manual) · '+tm.from+' → '+tm.to;
+    // Total Calls = every call in range/filters, regardless of isLead — same
+    // population mktOverviewRows() already defines (used nowhere else on the
+    // Overview page, but it's exactly this: date+category+bizUnit+callType
+    // filtered, no lead/excused/hours narrowing — those live only on the
+    // separate Call Analysis page's own filter set, out of scope here).
+    renderCallsFunnelChart(tm,mktOverviewRows().length,totalLeads,totalOpps);
   }else{
     if(finfo) finfo.textContent = leadCalls.toLocaleString()+' lead calls · '+tm.from+' → '+tm.to;
   }
+}
+
+// Calls-to-Sale Funnel (added 2026-09-18, per Ariel's request, styled to
+// match the Best Plumber dashboard's own Calls-to-Sale Funnel format — a
+// hand-built SVG trapezoid stack, narrowing band per stage, rate/value
+// badge centered in each band, native SVG <title> hover tooltips for the
+// counts behind each band — rather than a stat-tile row. Per Ariel's
+// scoping choice this session: the trapezoid VISUAL only, not Best
+// Plumber's separate Compare-Dates/period-over-period-delta side panel,
+// which Coolbreeze's Marketing tab has no infrastructure for yet (no
+// MKT_COMPARE_PRESETS/mktCompareRangePair() here). 2 bands (Leads → Booked
+// → Sale), not Best Plumber's 5 (Impressions → Clicks → Leads → Booked →
+// Completed → Sold) — Coolbreeze has no ad-spend feed yet for
+// Impressions/Clicks, and no separate "Completed" population wired into
+// this funnel. Booked reuses the exact totalLeads/totalOpps figures
+// updateOverviewKPIs() just computed (same Leads/Total Opportunities KPI
+// math, so the funnel can never drift from those cards). Sale is Estimates
+// Subtotal summed across Sold estimates dated (Sold On) within the SAME
+// date range and respecting the Marketing tab's Business Unit filter —
+// company-wide, NOT broken down by Campaign Category like the rest of this
+// tab, since Estimates carry no Call/Web Booking/campaign reference to join
+// on (same gap noted in the Marketing ROI table's Sales column).
+// Deliberately no numeric badge for a Booked→Sale conversion RATE (unlike
+// the Leads→Booked band, a valid count÷count ratio): Booked is a headcount
+// and Sale is a dollar figure, so a percentage between them would misstate
+// a ratio between two different units — the Sale band's badge shows the $
+// figure itself instead, no fake precision, same convention used
+// throughout this file.
+function mktSoldEstimatesInRange(from,to){
+  if(!estimatesDataReady) return null;
+  let amount=0, count=0;
+  ALL_ESTIMATES.forEach(e=>{
+    if(e.status!=='Sold') return;
+    if(!e.soldOn || e.soldOn<from || e.soldOn>to) return;
+    if(!mktBizMatch(e.bizUnit)) return;
+    amount+=(e.subtotal||0); count++;
+  });
+  return {amount,count};
+}
+function renderCallsFunnelChart(tm,totalCalls,totalLeads,totalOpps){
+  const svg=document.getElementById('mktCallsFunnelSvg');
+  if(!svg) return;
+  const sale=mktSoldEstimatesInRange(tm.from,tm.to);
+  const leadRate = totalCalls>0 ? totalLeads/totalCalls*100 : null;
+  const bookingRate = totalLeads>0 ? totalOpps/totalLeads*100 : null;
+
+  const countEl=document.getElementById('mktCallsFunnel-count');
+  if(countEl) countEl.textContent = sale
+    ? sale.count.toLocaleString()+' sold estimate'+(sale.count!==1?'s':'')+' · '+fmtM(sale.amount)
+    : 'Awaiting Estimates data';
+
+  // Same trapezoid-stack construction as Best Plumber's renderCallsFunnelChart()
+  // (cx/halfWidths/ys/colors arrays, one polygon+pill-badge+text per band) —
+  // band widths are a fixed decorative taper, not literally proportional to
+  // the counts (a low-volume Sale stage would otherwise collapse to an
+  // unreadable sliver against a much larger Leads count). 3 bands here
+  // (added Total Calls→Leads on top, 2026-09-18) vs. Best Plumber's 5, so
+  // only 3 of their 5-step color/width arrays are used.
+  const cx=120;
+  const halfWidths=[110,88,66,44];
+  const ys=[0,100,200,300];
+  const colors=['#DCE9FB','#6B9BE0','#1B3B6F'];
+  const badgeText=[
+    leadRate==null ? '—' : Math.round(leadRate)+'%',
+    bookingRate==null ? '—' : Math.round(bookingRate)+'%',
+    sale ? fmtM(sale.amount) : '—',
+  ];
+  const tipText=[
+    'Lead Rate: '+(leadRate==null?'—':Math.round(leadRate)+'%')+'\nTotal Calls: '+totalCalls.toLocaleString()+' → Leads: '+totalLeads.toLocaleString(),
+    'Booking Rate: '+(bookingRate==null?'—':Math.round(bookingRate)+'%')+'\nLeads: '+totalLeads.toLocaleString()+' → Booked: '+totalOpps.toLocaleString(),
+    'Sale: '+(sale?fmtM(sale.amount):'—')+'\nBooked: '+totalOpps.toLocaleString()+' → Sold: '+(sale?sale.count.toLocaleString():'—')+(sale?' · '+fmtM(sale.amount):''),
+  ];
+  let svgHtml='';
+  for(let i=0;i<3;i++){
+    const hw0=halfWidths[i], hw1=halfWidths[i+1], y0=ys[i], y1=ys[i+1];
+    const pts=(cx-hw0)+','+y0+' '+(cx+hw0)+','+y0+' '+(cx+hw1)+','+y1+' '+(cx-hw1)+','+y1;
+    const midY=(y0+y1)/2;
+    svgHtml += '<polygon class="fn-seg" points="'+pts+'" fill="'+colors[i]+'"><title>'+esc(tipText[i])+'</title></polygon>';
+    svgHtml += '<rect class="fn-seg" x="'+(cx-30)+'" y="'+(midY-13)+'" width="60" height="26" rx="13" fill="rgba(255,255,255,.85)"><title>'+esc(tipText[i])+'</title></rect>';
+    svgHtml += '<text x="'+cx+'" y="'+(midY+5)+'" text-anchor="middle" font-size="14" font-weight="700" fill="#12203f" style="pointer-events:none">'+esc(badgeText[i])+'</text>';
+  }
+  svg.innerHTML=svgHtml;
+}
+// Estimates loads on its own independent schedule (loadAndInitEstimates()),
+// so this hook — called after every processEstimates() completes — re-runs
+// the funnel if Estimates finishes loading (or its background refresh
+// completes) after Calls/Web Bookings are already up, instead of leaving
+// the Sale band blank until the next manual filter change. Mirrors
+// refreshMktAfterJobsLoad()'s existing convention exactly.
+function refreshMktAfterEstimatesLoad(){
+  if(callsDataReady && webBookingsDataReady) updateOverviewKPIs();
 }
 
 /* Business Unit breakdown: Leads/Opportunities/Unbooked/Cancelled are now
@@ -5764,6 +5988,8 @@ const MEM2_FIELD_ALIASES = {
   deferredBalance:   ['deferred revenue balance','deferred balance','balance'],
   initialDeferred:   ['initial deferred revenue'],
   locationId:        ['location id'],
+  duration:          ['membership duration','duration'],
+  billingTemplateTotal: ['billing template total','billing template'],
 };
 
 function mem2PlanBase(t){
@@ -5814,6 +6040,8 @@ function buildMembershipsTabRows(raw){
       deferredBalance: Number(pickField(obj,MEM2_FIELD_ALIASES.deferredBalance)) || 0,
       initialDeferred: Number(pickField(obj,MEM2_FIELD_ALIASES.initialDeferred)) || 0,
       locationId: pickField(obj,MEM2_FIELD_ALIASES.locationId) || '',
+      isOngoingDuration: (()=>{ const d=pickField(obj,MEM2_FIELD_ALIASES.duration); const s=(d==null?'':String(d).trim()); return s===''||/^ongoing$/i.test(s); })(),
+      billingTemplateTotal: (()=>{ const v=pickField(obj,MEM2_FIELD_ALIASES.billingTemplateTotal); return (v===''||v==null) ? null : Number(v)||0; })(),
     };
   }).filter(Boolean);
 }
@@ -5830,7 +6058,7 @@ const MEM2_PALETTE=['#2563eb','#0e93a8','#0fa572','#e08a1e','#7c3aed','#db2777']
 const MEM2_STATUS_COLORS={Active:'#0fa572',Expired:'#e08a1e',Canceled:'#dc2626',Unknown:'#9fb3c2'};
 const MEM2_PLAN_ORDER=['Classic Plan','Performance Plan','Essential Plan','Other'];
 const MEM2_STATUS_PILL={Active:'ar-current',Expired:'ar-3060',Canceled:'ar-90plus'};
-const MEM2_TH={customerName:'m2th-customerName',planBase:'m2th-planBase',status:'m2th-status',from:'m2th-from',to:'m2th-to',lastBilling:'m2th-lastBilling',salePrice:'m2th-salePrice',deferredBalance:'m2th-deferredBalance',recognizedRevenue:'m2th-recognizedRevenue',paymentMethodCat:'m2th-paymentMethodCat',locationId:'m2th-locationId'};
+const MEM2_TH={customerName:'m2th-customerName',planBase:'m2th-planBase',status:'m2th-status',from:'m2th-from',to:'m2th-to',lastBilling:'m2th-lastBilling',salePrice:'m2th-salePrice',deferredBalance:'m2th-deferredBalance',recognizedRevenue:'m2th-recognizedRevenue',paymentMethodCat:'m2th-paymentMethodCat'};
 
 function renderMem2KPIs(){
   const rows=ALL_MEMBERSHIPS2;
@@ -5884,15 +6112,14 @@ function renderMem2KPIs(){
 function renderMembershipCharts(){
   const rows=ALL_MEMBERSHIPS2;
   const statuses=['Active','Expired','Canceled'];
-  const knownCount=statuses.reduce((s,st)=>s+rows.filter(r=>r.status===st).length,0);
-  const otherCount=rows.length-knownCount;
-  const statusLabels=otherCount>0 ? [...statuses,'Other'] : statuses;
+  const activeRowsForType=rows.filter(r=>r.status==='Active');
+  const typeLabels=[...new Set(activeRowsForType.map(r=>r.planBase))].sort((a,b)=>MEM2_PLAN_ORDER.indexOf(a)-MEM2_PLAN_ORDER.indexOf(b));
 
   destroyMem2Chart('status');
   MEM2_CHARTS.status=new Chart(document.getElementById('memStatusChart'),{
     type:'doughnut',
-    data:{labels:statusLabels,datasets:[{data:statusLabels.map(l=>l==='Other'?otherCount:rows.filter(r=>r.status===l).length),backgroundColor:statusLabels.map(l=>MEM2_STATUS_COLORS[l]||'#9fb3c2'),borderWidth:2,borderColor:'#fff'}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:10.5}}},tooltip:{callbacks:{label:c=>' '+c.label+': '+c.parsed+(rows.length?' ('+Math.round(c.parsed/rows.length*1000)/10+'%)':'')}}}}
+    data:{labels:typeLabels,datasets:[{data:typeLabels.map(l=>activeRowsForType.filter(r=>r.planBase===l).length),backgroundColor:typeLabels.map((l,i)=>MEM2_PALETTE[i%MEM2_PALETTE.length]),borderWidth:2,borderColor:'#fff'}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:10.5}}},tooltip:{callbacks:{label:c=>' '+c.label+': '+c.parsed+(activeRowsForType.length?' ('+Math.round(c.parsed/activeRowsForType.length*1000)/10+'%)':'')}}}}
   });
 
   const plans=[...new Set(rows.map(r=>r.planBase))].sort((a,b)=>MEM2_PLAN_ORDER.indexOf(a)-MEM2_PLAN_ORDER.indexOf(b));
@@ -5957,6 +6184,30 @@ function renderMem2Renewals(){
   }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--gray-500);padding:20px">No Active memberships have a known renewal/end date within the next 90 days.</td></tr>';
 }
 
+// Two data-quality warning types, both scoped to Active memberships (per
+// Ariel, 2026-09-18): (1) an Active membership with no fixed term
+// ("Ongoing" — blank Membership Duration) whose Billing Template Total is
+// exactly $0 — i.e. actively billing nothing on an open-ended plan; (2) an
+// Active membership carrying a negative Deferred Revenue Balance (money
+// recognized beyond what was ever deferred — a bookkeeping red flag).
+// billingTemplateTotal is null (not 0) when the source field is blank, so
+// warning #1 only fires on a REAL zero, never a missing value (no fake
+// precision, matching this file's existing convention).
+function renderMem2Warnings(){
+  const body=document.getElementById('memWarningsBody');
+  if(!body) return;
+  const w1=ALL_MEMBERSHIPS2.filter(r=>r.status==='Active' && r.isOngoingDuration && r.billingTemplateTotal===0)
+    .map(r=>({r,type:'Ongoing, $0 Billing Template',detail:'Billing Template Total: '+fmtFull(0),cls:'ar-90plus'}));
+  const w2=ALL_MEMBERSHIPS2.filter(r=>r.status==='Active' && r.deferredBalance<0)
+    .map(r=>({r,type:'Negative Deferred Balance',detail:'Deferred Balance: '+fmtFull(r.deferredBalance),cls:'ar-3060'}));
+  const all=[...w1,...w2].sort((a,b)=>a.r.customerName.localeCompare(b.r.customerName));
+  const cntEl=document.getElementById('mem2-warnings-count');
+  if(cntEl) cntEl.textContent=all.length.toLocaleString()+' warning(s)';
+  body.innerHTML = all.map(({r,type,detail,cls})=>
+    `<tr><td class="td-cust">${esc(r.customerName)}</td><td>${esc(r.planRaw)||'—'}</td><td><span class="status-pill ${cls}">${esc(type)}</span></td><td>${esc(detail)}</td><td>${stMembershipLink(r.membershipId)}</td></tr>`
+  ).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--gray-500);padding:20px">No warnings — no Active membership currently matches either flagged condition.</td></tr>';
+}
+
 function currentMem2Rows(){
   let list=ALL_MEMBERSHIPS2.slice();
   if(mem2SearchQuery){
@@ -6012,21 +6263,22 @@ function renderMem2Detail(){
     <td class="td-val">${fmtFull(r.deferredBalance)}</td>
     <td class="td-val">${fmtFull(r.recognizedRevenue)}</td>
     <td>${esc(r.paymentMethodCat)}</td>
-    <td>${esc(r.locationId)||'—'}</td>
+    <td>${stMembershipLink(r.membershipId)}</td>
   </tr>`).join('');
   renderJobPagination('memDetailPagination2', list.length, mem2Page, 'goMem2Page');
 }
 function exportMembershipsXLSX(){
   const rows=currentMem2Rows();
   exportJobsXLSX('Coolbreeze_Memberships_'+todayISO()+'.xlsx',
-    ['Customer','Plan','Status','Started','Renewal/End','Last Billing','Sale/Renewal Price','Deferred Balance','Recognized Revenue','Payment Method','Location ID'],
-    rows.map(r=>[r.customerName, r.planRaw, r.status, r.from?fmtDate(r.from):'', r.to?fmtDate(r.to):'', r.lastBilling, r.salePrice, r.deferredBalance, r.recognizedRevenue, r.paymentMethodCat, r.locationId]));
+    ['Customer','Plan','Status','Started','Renewal/End','Last Billing','Sale/Renewal Price','Deferred Balance','Recognized Revenue','Payment Method'],
+    rows.map(r=>[r.customerName, r.planRaw, r.status, r.from?fmtDate(r.from):'', r.to?fmtDate(r.to):'', r.lastBilling, r.salePrice, r.deferredBalance, r.recognizedRevenue, r.paymentMethodCat]));
 }
 
 function renderMem2Tab(){
   renderMem2KPIs();
   renderMembershipCharts();
   renderMem2Renewals();
+  renderMem2Warnings();
   renderMem2Detail();
   const finfo=document.getElementById('mem2-finfo');
   if(finfo) finfo.textContent = mem2LoadedAt ? 'Last refreshed '+fmtDate(mem2LoadedAt)+' · '+ALL_MEMBERSHIPS2.length.toLocaleString()+' membership row(s)' : 'Loading membership data…';
