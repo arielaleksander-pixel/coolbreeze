@@ -2892,10 +2892,14 @@ const JOBS_CONFIG = {
   // one (see processJobs). Optional: if this ever comes back empty/missing,
   // fetchJobsPrevYearBlob() degrades non-fatally and the current-year data
   // still loads on its own, same as Best Plumber's multi-blob Jobs tab.
+  // Prior-years Jobs export (2020–2024), added 2026-09-19 — third dataset, merged
+  // by processJobs() with Job # dedup (existing datasets win any overlap).
+  sasUrlPriorYears: "https://coolbreeze.blob.core.windows.net/coolbreeze/Jobs%20Previous%20Prior%20Year.xlsx?sp=r&st=2026-09-19T17:10:05Z&se=2030-09-20T01:25:05Z&spr=https&sv=2026-02-06&sr=b&sig=t4bnJMtkJG1w%2B9eNf8pc2ZdQTRS%2Bkgc8damEnjD6dcI%3D",
   sasUrlPrevYear: "https://coolbreeze.blob.core.windows.net/coolbreeze/Jobs%20Service%20Titan%20Previous%20Year.xlsx?sp=r&st=2026-09-12T01:07:42Z&se=2030-09-12T09:22:42Z&spr=https&sv=2026-02-06&sr=b&sig=sMbUxA7eNc0qbTnTkihJLRmpA1TvHl%2BmG5le5c7M3Ac%3D",
 };
 const REPORT_KEY_JOBS = 'jobsServiceTitan'; // used with the existing getCached/setCache('cb_'+report, ...)
 const REPORT_KEY_JOBS_PREV = 'jobsServiceTitanPrevYear';
+const REPORT_KEY_JOBS_PRIOR = 'jobsServiceTitanPriorYears';
 
 function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
@@ -3066,8 +3070,14 @@ function parseJobsRows(rows){
   }
   return out;
 }
-function processJobs(rows,prevYearRows){
+function processJobs(rows,prevYearRows,priorYearRows){
   ALL_JOBS=parseJobsRows(rows).concat(prevYearRows?parseJobsRows(prevYearRows):[]);
+  if(priorYearRows){
+    // Prior-years export (2020–2024): a job created late in one period can
+    // appear in an adjacent export, so skip any Job # already loaded.
+    const seenJobs=new Set(ALL_JOBS.map(j=>String(j.o)));
+    ALL_JOBS=ALL_JOBS.concat(parseJobsRows(priorYearRows).filter(j=>!seenJobs.has(String(j.o))));
+  }
   console.log('[Jobs] Parsed',ALL_JOBS.length,'jobs (including previous-year rows if provided)');
   // Marketing tab's Manual Calls component reads ALL_JOBS directly — refresh
   // it in case Calls/Web Bookings already finished loading before Jobs did.
@@ -3218,10 +3228,12 @@ function renderJobKPIs(){
   document.getElementById('jk-rev').textContent=fmtM(totalRev);
   const revSubEl=document.getElementById('jk-rev-sub');
   if(revSubEl) revSubEl.textContent=constrAmt>0?('Service '+fmtM(rev)+' + Construction '+fmtM(constrAmt)):'Job revenue';
-  const laborPct=rev>0?labor/rev*100:0,matlPct=rev>0?matl/rev*100:0;
-  document.getElementById('jk-labor').textContent=rev>0?laborPct.toFixed(1)+'%':'—';
+  // Per Ariel (2026-09-19): Labor % and Material % are now a share of TOTAL revenue
+  // (Service + Construction), same denominator as Gross Margin %. Dollar sub-labels unchanged.
+  const laborPct=totalRev>0?labor/totalRev*100:0,matlPct=totalRev>0?matl/totalRev*100:0;
+  document.getElementById('jk-labor').textContent=totalRev>0?laborPct.toFixed(1)+'%':'—';
   document.getElementById('jk-labor-sub').textContent=fmtM(labor);
-  document.getElementById('jk-matl').textContent=rev>0?matlPct.toFixed(1)+'%':'—';
+  document.getElementById('jk-matl').textContent=totalRev>0?matlPct.toFixed(1)+'%':'—';
   document.getElementById('jk-matl-sub').textContent=fmtM(matl);
   document.getElementById('jk-gm').textContent=fmtM(gm);
   const gmSubEl=document.getElementById('jk-gm-sub');
@@ -3262,7 +3274,7 @@ function renderJobKPIs(){
     const prevGmPct=prevTotalRev>0?prevGm/prevTotalRev*100:0;
     document.getElementById('jkd-total').innerHTML=jobFmtDelta(n,pn,pn.toString());
     document.getElementById('jkd-rev').innerHTML=jobFmtDelta(totalRev,prevTotalRev,fmtM(prevTotalRev));
-    const prevLaborPct=prevRev>0?prevLabor/prevRev*100:0,prevMatlPct=prevRev>0?prevMatl/prevRev*100:0;
+    const prevLaborPct=prevTotalRev>0?prevLabor/prevTotalRev*100:0,prevMatlPct=prevTotalRev>0?prevMatl/prevTotalRev*100:0;
     document.getElementById('jkd-labor').innerHTML=jobFmtDeltaPts(laborPct,prevLaborPct,prevLaborPct.toFixed(1)+'%');
     document.getElementById('jkd-matl').innerHTML=jobFmtDeltaPts(matlPct,prevMatlPct,prevMatlPct.toFixed(1)+'%');
     document.getElementById('jkd-gm').innerHTML=jobFmtDelta(gm,prevGm,fmtM(prevGm));
@@ -3547,20 +3559,28 @@ async function fetchJobsPrevYearBlob(){
   }
 }
 
+async function fetchJobsPriorYearsBlob(){
+  if(!JOBS_CONFIG.sasUrlPriorYears)return null;
+  try{ return await fetchBlobXLSX(JOBS_CONFIG.sasUrlPriorYears); }
+  catch(e){ console.warn('[Jobs] Prior-years blob fetch failed (non-fatal):',e.message); return null; }
+}
+
 async function loadAndInitJobs(){
   document.getElementById('jobDateFrom').value=monthStartISO();
   document.getElementById('jobDateTo').value=todayISO();
 
   const cached=getCached(REPORT_KEY_JOBS);
   const cachedPrev=getCached(REPORT_KEY_JOBS_PREV);
+  const cachedPrior=getCached(REPORT_KEY_JOBS_PRIOR);
   if(cached){
-    processJobs(cached,cachedPrev);buildJobMSOptions();applyJobFilters();
+    processJobs(cached,cachedPrev,cachedPrior);buildJobMSOptions();applyJobFilters();
     document.getElementById('job-finfo').textContent=jobFiltered.length.toLocaleString()+' completed · cached, refreshing…';
     try{
-      const [rows,prevRows]=await Promise.all([fetchJobsBlob(),fetchJobsPrevYearBlob()]);
+      const [rows,prevRows,priorRows]=await Promise.all([fetchJobsBlob(),fetchJobsPrevYearBlob(),fetchJobsPriorYearsBlob()]);
       setCache(REPORT_KEY_JOBS,rows);
       if(prevRows)setCache(REPORT_KEY_JOBS_PREV,prevRows);
-      processJobs(rows,prevRows||cachedPrev);buildJobMSOptions();applyJobFilters();
+      if(priorRows)setCache(REPORT_KEY_JOBS_PRIOR,priorRows);
+      processJobs(rows,prevRows||cachedPrev,priorRows||cachedPrior);buildJobMSOptions();applyJobFilters();
     }catch(e){
       console.warn('[Jobs BG refresh failed]',e);
       document.getElementById('job-finfo').textContent+=' · ⚠ refresh failed: '+e.message.slice(0,80);
@@ -3570,10 +3590,11 @@ async function loadAndInitJobs(){
 
   try{
     document.getElementById('job-finfo').textContent='Connecting to Azure…';
-    const [rows,prevRows]=await Promise.all([fetchJobsBlob(),fetchJobsPrevYearBlob()]);
+    const [rows,prevRows,priorRows]=await Promise.all([fetchJobsBlob(),fetchJobsPrevYearBlob(),fetchJobsPriorYearsBlob()]);
     setCache(REPORT_KEY_JOBS,rows);
     if(prevRows)setCache(REPORT_KEY_JOBS_PREV,prevRows);
-    processJobs(rows,prevRows);buildJobMSOptions();applyJobFilters();
+    if(priorRows)setCache(REPORT_KEY_JOBS_PRIOR,priorRows);
+    processJobs(rows,prevRows,priorRows);buildJobMSOptions();applyJobFilters();
   }catch(e){
     console.error('[Jobs] Load error:',e);
     document.getElementById('job-finfo').textContent='⚠ Failed to load: '+e.message;
@@ -3587,6 +3608,7 @@ clearAllCache=function(){
   _origClearAllCache();
   try{localStorage.removeItem('cb_'+REPORT_KEY_JOBS);}catch(e){}
   try{localStorage.removeItem('cb_'+REPORT_KEY_JOBS_PREV);}catch(e){}
+  try{localStorage.removeItem('cb_'+REPORT_KEY_JOBS_PRIOR);}catch(e){}
 };
 
 document.addEventListener('DOMContentLoaded',loadAndInitJobs);
@@ -4305,9 +4327,14 @@ document.addEventListener('DOMContentLoaded', loadAndInitEstimates);
 // ══════════════════════════════════════════════════════════════════════════
 const MKT_CONFIG = {
   sasUrlCalls: "https://coolbreeze.blob.core.windows.net/coolbreeze/Calls%20Service%20Titan.xlsx?sp=r&st=2026-09-12T14:21:33Z&se=2030-09-12T22:36:33Z&spr=https&sv=2026-02-06&sr=b&sig=xSqP%2FnKRETqi0Gu57l81AZ%2FRy0fzoNv1%2BLun%2Bu0yGi4%3D",
+  // Previous-years Calls export (same column shape as the current-year file;
+  // 2025 data as of 2026-09-19). Merged into ALL_CALLS by mktMergeCalls() —
+  // same optional multi-dataset pattern as JOBS_CONFIG.sasUrlPrevYear.
+  sasUrlCallsPrevYears: "https://coolbreeze.blob.core.windows.net/coolbreeze/Calls%20Previous%20Years.xlsx?sp=r&st=2026-09-19T16:37:00Z&se=2030-09-20T00:52:00Z&spr=https&sv=2026-02-06&sr=b&sig=4VzVSU7VvhzVb83QuHe4FscXsF0HyfhxR61GCaBfVWo%3D",
   sasUrlWebBookings: "https://coolbreeze.blob.core.windows.net/coolbreeze/Web%20Booking%20Service%20Titan.xlsx?sp=r&st=2026-09-12T15:43:55Z&se=2030-09-12T23:58:55Z&spr=https&sv=2026-02-06&sr=b&sig=oymnzogk%2Fk9Pj%2BgvXaqgY0pPQi66RF4YRaHxBVAUnm0%3D",
 };
 const REPORT_KEY_CALLS = 'callsServiceTitan';
+const REPORT_KEY_CALLS_PREV = 'callsServiceTitanPrevYears';
 const REPORT_KEY_WEBBOOKINGS = 'webBookingServiceTitan';
 
 let ALL_CALLS = [];
@@ -5472,6 +5499,22 @@ function exportCallsAuditXLSX(){
 }
 
 async function fetchCallsBlob(){ return fetchBlobXLSX(MKT_CONFIG.sasUrlCalls); }
+// Non-fatal: if the previous-years file can't be fetched, current-year calls still load.
+async function fetchCallsPrevYearsBlob(){
+  if(!MKT_CONFIG.sasUrlCallsPrevYears) return null;
+  try{ return await fetchBlobXLSX(MKT_CONFIG.sasUrlCallsPrevYears); }
+  catch(e){ console.warn('[Marketing] Previous-years Calls fetch failed (non-fatal — current-year calls still load):', e.message); return null; }
+}
+// Parse current + previous-years raw rows into one ALL_CALLS list. Call ID is
+// unique per call, so dedup by ID defensively (current-year rows win any
+// accidental overlap between the two report periods).
+function mktMergeCalls(curRows, prevRows){
+  const cur = curRows ? parseCallsRows(curRows) : [];
+  const prev = prevRows ? parseCallsRows(prevRows) : [];
+  if(!prev.length) return cur;
+  const seen = new Set(cur.map(c=>c.id));
+  return cur.concat(prev.filter(c=>!seen.has(c.id)));
+}
 async function fetchWebBookingsBlob(){ return fetchBlobXLSX(MKT_CONFIG.sasUrlWebBookings); }
 
 // Total Leads/Opportunities and the charts/tables that depend on them read
@@ -5495,15 +5538,17 @@ async function loadAndInitMkt(){
 
   async function loadCalls(){
     const cached=getCached(REPORT_KEY_CALLS);
+    const cachedPrev=getCached(REPORT_KEY_CALLS_PREV);
     if(cached){
-      ALL_CALLS=parseCallsRows(cached);
+      ALL_CALLS=mktMergeCalls(cached, cachedPrev);
       callsDataReady=true;
       buildMktFilterOptions();
       applyMktFilters();
       try{
-        const rows=await fetchCallsBlob();
+        const [rows,prevRows]=await Promise.all([fetchCallsBlob(), fetchCallsPrevYearsBlob()]);
         setCache(REPORT_KEY_CALLS, rows);
-        ALL_CALLS=parseCallsRows(rows);
+        if(prevRows) setCache(REPORT_KEY_CALLS_PREV, prevRows);
+        ALL_CALLS=mktMergeCalls(rows, prevRows||cachedPrev);
         buildMktFilterOptions();
         applyMktFilters();
       }catch(e){
@@ -5511,9 +5556,10 @@ async function loadAndInitMkt(){
       }
       return;
     }
-    const rows=await fetchCallsBlob();
+    const [rows,prevRows]=await Promise.all([fetchCallsBlob(), fetchCallsPrevYearsBlob()]);
     setCache(REPORT_KEY_CALLS, rows);
-    ALL_CALLS=parseCallsRows(rows);
+    if(prevRows) setCache(REPORT_KEY_CALLS_PREV, prevRows);
+    ALL_CALLS=mktMergeCalls(rows, prevRows);
     callsDataReady=true;
     buildMktFilterOptions();
     applyMktFilters();
@@ -5560,6 +5606,7 @@ const _origClearAllCache3=clearAllCache;
 clearAllCache=function(){
   _origClearAllCache3();
   try{ localStorage.removeItem('cb_'+REPORT_KEY_CALLS); }catch(e){}
+  try{ localStorage.removeItem('cb_'+REPORT_KEY_CALLS_PREV); }catch(e){}
   try{ localStorage.removeItem('cb_'+REPORT_KEY_WEBBOOKINGS); }catch(e){}
 };
 
@@ -5607,10 +5654,13 @@ const AR_CONFIG = {
   // report-period design (same assumption JOBS_CONFIG.sasUrlPrevYear
   // already relies on for Jobs — no dedup between current/prev-year rows
   // there either). Blob-scoped SAS token (sr=b), valid through 2030-09-16.
+  // Prior-to-previous-year invoices (2024 and earlier), added 2026-09-19 — third dataset.
+  sasUrlPriorYears: "https://coolbreeze.blob.core.windows.net/coolbreeze/Invoices%20Prior%20Previous%20Year.xlsx?sp=r&st=2026-09-19T16:57:30Z&se=2030-09-20T01:12:30Z&spr=https&sv=2026-02-06&sr=b&sig=ph6X62ihI%2BT5x1aglPCpw3Ra17pIFf7ffGLP0fc5A8U%3D",
   sasUrlPrevYears: "https://coolbreeze.blob.core.windows.net/coolbreeze/Invoices%20Previous%20Year.xlsx?sp=r&st=2026-09-16T11:57:27Z&se=2030-09-16T20:12:27Z&spr=https&sv=2026-02-06&sr=b&sig=qiEcHh8bJsx1KEdp0g9I8bWKHhgUmLLOar4SAXjiUmE%3D",
 };
 const REPORT_KEY_AR = 'invoicesServiceTitan';
 const REPORT_KEY_AR_PREV = 'invoicesServiceTitanPrevYears';
+const REPORT_KEY_AR_PRIOR = 'invoicesServiceTitanPriorYears';
 
 let ALL_AR = [];
 let arDataReady = false;
@@ -5643,6 +5693,11 @@ function buildARCustomerOptions(){
 }
 function onARAgingFilterChange(v){ arAgingFilter=v; arPage=1; renderARDetail(); }
 
+async function fetchARPriorYearsBlob(){
+  if(!AR_CONFIG.sasUrlPriorYears) return null;
+  try{ return await fetchBlobXLSX(AR_CONFIG.sasUrlPriorYears); }
+  catch(e){ console.warn('[AR] Prior-years blob fetch failed (non-fatal):', e.message); return null; }
+}
 async function fetchARBlob(){ return fetchBlobXLSX(AR_CONFIG.sasUrl); }
 async function fetchARPrevYearsBlob(){
   if(!AR_CONFIG.sasUrlPrevYears) return null;
@@ -5883,18 +5938,20 @@ async function loadAndInitAR(){
   const finfo=document.getElementById('ar-finfo');
   const cached=getCached(REPORT_KEY_AR);
   const cachedPrev=getCached(REPORT_KEY_AR_PREV);
+  const cachedPrior=getCached(REPORT_KEY_AR_PRIOR);
   if(cached){
-    ALL_AR=buildARRows(cached,cachedPrev);
-    CONSTRUCTION_REV=buildConstructionRevenueRows(cached,cachedPrev);
+    ALL_AR=buildARRows(cached,cachedPrev,cachedPrior);
+    CONSTRUCTION_REV=buildConstructionRevenueRows(cached,cachedPrev,cachedPrior);
     arDataReady=true; arLoadedAt=new Date();
     renderARTab();
     if(typeof refreshJobsAfterARLoad==='function') refreshJobsAfterARLoad();
     try{
-      const [rows,prevRows]=await Promise.all([fetchARBlob(),fetchARPrevYearsBlob()]);
+      const [rows,prevRows,priorRows]=await Promise.all([fetchARBlob(),fetchARPrevYearsBlob(),fetchARPriorYearsBlob()]);
       setCache(REPORT_KEY_AR,rows);
       if(prevRows)setCache(REPORT_KEY_AR_PREV,prevRows);
-      ALL_AR=buildARRows(rows,prevRows||cachedPrev);
-      CONSTRUCTION_REV=buildConstructionRevenueRows(rows,prevRows||cachedPrev);
+      if(priorRows)setCache(REPORT_KEY_AR_PRIOR,priorRows);
+      ALL_AR=buildARRows(rows,prevRows||cachedPrev,priorRows||cachedPrior);
+      CONSTRUCTION_REV=buildConstructionRevenueRows(rows,prevRows||cachedPrev,priorRows||cachedPrior);
       arLoadedAt=new Date();
       renderARTab();
       if(typeof refreshJobsAfterARLoad==='function') refreshJobsAfterARLoad();
@@ -5906,11 +5963,12 @@ async function loadAndInitAR(){
   }
   try{
     if(finfo) finfo.textContent='Connecting to Azure…';
-    const [rows,prevRows]=await Promise.all([fetchARBlob(),fetchARPrevYearsBlob()]);
+    const [rows,prevRows,priorRows]=await Promise.all([fetchARBlob(),fetchARPrevYearsBlob(),fetchARPriorYearsBlob()]);
     setCache(REPORT_KEY_AR,rows);
     if(prevRows)setCache(REPORT_KEY_AR_PREV,prevRows);
-    ALL_AR=buildARRows(rows,prevRows);
-    CONSTRUCTION_REV=buildConstructionRevenueRows(rows,prevRows);
+    if(priorRows)setCache(REPORT_KEY_AR_PRIOR,priorRows);
+    ALL_AR=buildARRows(rows,prevRows,priorRows);
+    CONSTRUCTION_REV=buildConstructionRevenueRows(rows,prevRows,priorRows);
     arDataReady=true; arLoadedAt=new Date();
     renderARTab();
     if(typeof refreshJobsAfterARLoad==='function') refreshJobsAfterARLoad();
@@ -5929,6 +5987,7 @@ clearAllCache=function(){
   _origClearAllCache4();
   try{ localStorage.removeItem('cb_'+REPORT_KEY_AR); }catch(e){}
   try{ localStorage.removeItem('cb_'+REPORT_KEY_AR_PREV); }catch(e){}
+  try{ localStorage.removeItem('cb_'+REPORT_KEY_AR_PRIOR); }catch(e){}
 };
 
 document.addEventListener('DOMContentLoaded', loadAndInitAR);
