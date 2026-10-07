@@ -1947,14 +1947,22 @@ function normalizeVendorTxnRows(rawRows){
     // the main servicetitanBills report (this PO export uses the same
     // conventions): a "Return" row's Total is positive in the raw export,
     // so flip it negative to net correctly against Bills; and Date Billed
-    // is blank on Returns (they're never billed), so fall back to Date
-    // Created for those rows.
+    // is blank on Returns (they're never billed), so use Date Created for
+    // those rows (see the date block below).
     if(txnType.toLowerCase()==='return'&&amountRaw!==undefined&&amountRaw!==null&&amountRaw!==''){
       amountRaw=-Math.abs(sf(amountRaw));
     }
-    if(dateRaw===undefined||dateRaw===null||dateRaw===''){
+    // Returns ALWAYS take Date Created (Date Billed is blank on them, and
+    // the generic "Date" column can still be populated with a different
+    // date, e.g. Date Created 9/28 vs Date 10/2, which used to win because
+    // the fallback only fired when the date was entirely blank). Every other
+    // transaction type keeps Date Billed/Date, falling back to Date Created
+    // only when those are blank.
+    {
       const createdRaw=pickField(obj,['date created']);
-      if(createdRaw!==undefined)dateRaw=createdRaw;
+      const hasCreated=createdRaw!==undefined&&createdRaw!==null&&String(createdRaw).trim()!=='';
+      const dateBlank=dateRaw===undefined||dateRaw===null||String(dateRaw).trim()==='';
+      if(hasCreated&&(txnType.toLowerCase()==='return'||dateBlank))dateRaw=createdRaw;
     }
 
     if(vendorRaw===undefined)unmapped.add('vendor');
@@ -3597,7 +3605,7 @@ async function fetchVendorTxnsBlob(){return fetchBlobXLSX(PO_CONFIG.sasUrl);}
 // "Bills" export, but this PO Reconciliation report already contains every
 // Bill transaction (alongside Purchase Order/Receipt/Return/Transfer/
 // Adjustment rows the Bills tab doesn't want), so filtering to Transaction
-// Type="Bill" reproduces it. normalizeRows()'s existing isST branch already
+// Type="Bill" (plus "Return", netted as a vendor credit) reproduces it. normalizeRows()'s existing isST branch already
 // reads this export's columns correctly (Date Created for the date,
 // Transaction Number as the bill number via the FIELD_ALIASES.billNumber
 // "number" fallback, Vendor Name/Total as-is) — the same column shape
@@ -3605,7 +3613,13 @@ async function fetchVendorTxnsBlob(){return fetchBlobXLSX(PO_CONFIG.sasUrl);}
 // mapping was needed, just this type filter.
 function filterSTBillsRows(rawRows){
   const objs=toObjects(rawRows);
-  return objs.filter(o=>String(pickField(o,['transaction type'])||'').trim().toLowerCase()==='bill');
+  // Bills AND Returns: a ServiceTitan Return is the equivalent of a QuickBooks
+  // Vendor Credit, so it must be included (normalizeRows() flips its Total
+  // negative and dates it by Date Created) for the two sides to net the same.
+  return objs.filter(o=>{
+    const t=String(pickField(o,['transaction type'])||'').trim().toLowerCase();
+    return t==='bill'||t==='return';
+  });
 }
 async function fetchSTBillsBlob(){
   const rows=await fetchBlobXLSX(PO_CONFIG.sasUrl);
