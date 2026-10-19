@@ -604,6 +604,21 @@ details.rc-sec>summary,details.rc-raw>summary{cursor:pointer;font-weight:700;fon
 td.rc-copy[data-cp]{cursor:copy}
 td.rc-copy[data-cp]:hover{background:rgba(14,147,168,.13);box-shadow:inset 0 0 0 1px rgba(14,147,168,.45)}
 td.rc-copy.rc-copied{background:rgba(15,165,114,.25)!important}
+
+/* ===== Reviews tab (db7, added 2026-10-19) — mirrors Best Plumber's Reviews tab; delta chips scoped to #db7 (the Jobs tab's are scoped to #db2) ===== */
+#db7 .kpi-delta{font-size:11px;font-weight:700;margin-top:5px;min-height:14px;line-height:1.2;display:flex;flex-wrap:wrap;align-items:center;gap:3px 6px}
+#db7 .kpi-delta.up{color:var(--green)}
+#db7 .kpi-delta.down{color:var(--red)}
+#db7 .kd-pill{padding:1px 8px;border-radius:999px;font-weight:800;background:color-mix(in srgb,currentColor 13%,transparent)}
+#db7 .kd-vs{color:var(--gray-500);font-weight:600}
+#db7 .kd-was{color:var(--gray-500);font-weight:600;flex-basis:100%}
+#db7 .rv-stars{color:#d9a441;white-space:nowrap;letter-spacing:1px}
+#db7 .rv-rev{white-space:normal;min-width:320px;max-width:640px;line-height:1.45}
+#db7 .rv-sub{display:block;font-weight:500;font-size:11px;color:var(--gray-500);margin-top:2px}
+#db7 .rv-note{font-size:11.5px;color:var(--gray-500);margin-top:10px;line-height:1.4}
+#db7 .rv-approx{color:var(--gray-500);cursor:help;border-bottom:1px dotted var(--gray-500)}
+#db7 .rv-pos{color:var(--green);font-weight:700}
+#db7 .rv-neg{color:var(--red);font-weight:700}
 </style>
 </head>
 <body>
@@ -661,6 +676,7 @@ td.rc-copy.rc-copied{background:rgba(15,165,114,.25)!important}
   <div class="topnav-dropdown" id="mktDropdown">
     <button data-sub="overview" onclick="showDB(4);switchMktPage('overview');navPick('mktDropdown','overview')" class="active"><span class="tn-dd-ic">🏠</span><span>Overview</span></button>
     <button data-sub="calls" onclick="showDB(4);switchMktPage('calls');navPick('mktDropdown','calls')"><span class="tn-dd-ic">📞</span><span>Call Analysis</span></button>
+    <button data-sub="reviews" onclick="showDB(7);navPick('mktDropdown','reviews')"><span class="tn-dd-ic">⭐</span><span>Reviews</span></button>
   </div>
   </div>
   <div class="topnav-item">
@@ -1904,6 +1920,103 @@ td.rc-copy.rc-copied{background:rgba(15,165,114,.25)!important}
 </div>
 </div><!-- /db6 -->
 
+<!-- ══════════════════════════════════════════ -->
+<!-- DASHBOARD 7: REVIEWS (Google reviews)       -->
+<!-- ══════════════════════════════════════════ -->
+<div class="db-panel" id="db7">
+<div class="fbar">
+  <label>From</label>
+  <input type="date" id="rvDateFrom" class="date-inp" onchange="rvApplyFilters()">
+  <span class="fsep">&rarr;</span>
+  <label>To</label>
+  <input type="date" id="rvDateTo" class="date-inp" onchange="rvApplyFilters()">
+
+  <label>Star Rating</label>
+  <div class="ms-wrap" id="rvStarsWrap">
+    <button class="ms-btn" id="rvStarsBtn" onclick="toggleMS('rvStars',event)">All Star Ratings ▾</button>
+    <div class="ms-panel" id="rvStarsPanel">
+      <div class="ms-actions"><button onclick="rvSelectAllStars()">Select All</button><button onclick="rvClearStars()">Clear</button></div>
+      <div id="rvStarsItems"></div>
+    </div>
+  </div>
+
+  <label>Compare</label>
+  <select class="compare-sel" id="rvCompareSel" onchange="rvCompareMode=this.value;rvApplyFilters()">
+    <option value="none">No comparison</option>
+    <option value="last_period">vs Last Period</option>
+    <option value="last_month">vs Last Month (Same Period)</option>
+    <option value="last_month_full">vs Last Month (Full Month)</option>
+    <option value="last_quarter">vs Last Quarter</option>
+    <option value="last_year">vs Last Year</option>
+  </select>
+  <button class="btn-reset" onclick="rvResetFilters()">Reset</button>
+  <button class="btn-reset" onclick="loadAndInitReviews(true)">↻ Refresh</button>
+  <span class="finfo" id="rv-finfo">Loading reviews data…</span>
+</div>
+
+<div class="main">
+  <div class="section-lbl">⭐ Google Reviews</div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+    <div class="kpi"><div class="kpi-ico">⭐</div><div class="kpi-lbl">Avg Stars <span class="tip-ic" data-tip="Average star rating (1-5) across every review in the selected date range/filters. The single-number read on overall review quality.">ⓘ</span></div><div class="kpi-val" id="rv-avgstars">—</div><div class="kpi-delta" id="rvd-avgstars"></div></div>
+    <div class="kpi"><div class="kpi-ico">📝</div><div class="kpi-lbl">Total Reviews <span class="tip-ic" data-tip="Count of reviews in the selected date range/filters. Google only shows relative dates ('5 months ago'), so a review is dated to its approximate month (reviews Google dates only to the year, '2 years ago', use the approximate month from the file and may be off by up to a year).">ⓘ</span></div><div class="kpi-val" id="rv-total">—</div><div class="kpi-delta" id="rvd-total"></div></div>
+    <div class="kpi green"><div class="kpi-ico">😊</div><div class="kpi-lbl">Positive % <span class="tip-ic" data-tip="Reviews with 4 or 5 stars ÷ Total Reviews, for the selected date range/filters.">ⓘ</span></div><div class="kpi-val" id="rv-positivepct">—</div><div class="kpi-sub" id="rv-positivecount">—</div><div class="kpi-delta" id="rvd-positivepct"></div></div>
+    <div class="kpi red"><div class="kpi-ico">😞</div><div class="kpi-lbl">Negative % <span class="tip-ic" data-tip="Reviews with 1, 2 or 3 stars ÷ Total Reviews, for the selected date range/filters.">ⓘ</span></div><div class="kpi-val" id="rv-negativepct">—</div><div class="kpi-sub" id="rv-negativecount">—</div><div class="kpi-delta" id="rvd-negativepct"></div></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:20px">
+    <div class="card"><div class="ct">Running Total by Month <span class="tip-ic" data-tip="Cumulative review count by calendar month, one line per year (last 3 years by default — use the selector for more). Respects the Star Rating filter; the From/To date filter does not apply here. Reviews Google dates only to the year ('2 years ago') are plotted on the approximate month from the file.">ⓘ</span><select id="rvRunningYearsSel" onchange="rvRenderRunningTotalChart()" style="margin-left:auto;font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;border:1px solid var(--gray-200);background:#fff;color:var(--text)"><option value="3" selected>Last 3 years</option><option value="5">Last 5 years</option><option value="10">Last 10 years</option><option value="ALL">All years</option></select></div><div class="chart-wrap" style="height:280px"><canvas id="rvRunningTotalChart"></canvas></div></div>
+    <div class="tcard" style="margin-bottom:0">
+      <div class="thead-row"><div class="tcard-title">Negative Reviews <span class="tip-ic" data-tip="Every review with 1-3 stars in the selected date range/filters, most recent first.">ⓘ</span></div><div class="thead-right"><span class="tcnt" id="rv-neglist-count">— reviews</span></div></div>
+      <div class="tbl-wrap" style="max-height:280px">
+        <table><thead><tr><th>Name</th><th>Star</th><th>Review</th></tr></thead><tbody id="rvNegativeListBody"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-bottom:20px">
+    <div class="card"><div class="ct">Reviews Negative and Reviews Positive by Year and Month <span class="tip-ic" data-tip="Positive (4-5 stars) vs Negative (1-3 stars) review counts by calendar month. Respects the Star Rating filter; the From/To date filter does not apply here. Use the year selector to narrow to a single year. Reviews Google dates only to the year use the file's approximate month.">ⓘ</span><select id="rvPosNegYearSel" onchange="rvRenderPosNegChart()" style="margin-left:auto;font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;border:1px solid var(--gray-200);background:#fff;color:var(--text)"></select></div><div class="chart-wrap" style="height:300px"><canvas id="rvPosNegChart"></canvas></div>
+      <div class="rv-note" id="rv-yearnote"></div>
+    </div>
+  </div>
+
+  <div class="tcard">
+    <div class="thead-row"><div class="tcard-title">Technicians Most Mentioned in Customer Reviews <span class="tip-ic" data-tip="The Technician column of Reviews.xlsx split on commas, grouped per technician across reviews in the selected date range/filters (top 20 by mentions). Avg Star Rating = average stars of the reviews that mention that technician.">ⓘ</span></div></div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th onclick="rvSortTech('name')" id="rvtechth-name">Name</th>
+        <th onclick="rvSortTech('mentions')" id="rvtechth-mentions" class="sort-desc">Total Mentions</th>
+        <th onclick="rvSortTech('avgStars')" id="rvtechth-avgStars">Avg Star Rating</th>
+      </tr></thead>
+      <tbody id="rvTechBody"></tbody></table>
+    </div>
+  </div>
+
+  <div class="tcard">
+    <div class="thead-row">
+      <div class="tcard-title">Reviews <span class="tip-ic" data-tip="Every review in Reviews.xlsx for the selected date range/filters. 'Date' is Google's relative wording converted to an approximate month (~ = Google only gave a year); 'Google Date' is the original wording.">ⓘ</span></div>
+      <div class="thead-right">
+        <input class="search-box" type="text" id="rvSearch" placeholder="Search customer, review, technician…" oninput="rvOnSearchInput(this.value)">
+        <button class="btn-export" onclick="rvExportXLSX()">⬇ Export Excel</button>
+        <span class="tcnt" id="rv-count">— reviews</span>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th onclick="rvSortReviews('name')" id="rvth-name">Customer Name</th>
+        <th onclick="rvSortReviews('d8End')" id="rvth-d8End" class="sort-desc">Date</th>
+        <th>Google Date</th>
+        <th onclick="rvSortReviews('techStr')" id="rvth-techStr">Technician</th>
+        <th onclick="rvSortReviews('stars')" id="rvth-stars">Stars</th>
+        <th>Review</th>
+      </tr></thead>
+      <tbody id="rvBody"></tbody></table>
+    </div>
+    <div class="pg" id="rvPagination"></div>
+  </div>
+</div>
+</div><!-- /db7 -->
+
+
 </div><!-- /app-shell -->
 
 <div class="load-overlay" id="loadOverlay">
@@ -2972,12 +3085,13 @@ function showDB(n){
   document.querySelectorAll('.db-panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.sidebar-item').forEach(b=>b.classList.remove('active'));
   const panel=document.getElementById('db'+n); if(panel)panel.classList.add('active');
-  const nav=document.getElementById(n===6?'nav-ops':'nav-db'+(n===5?1:n)); if(nav)nav.classList.add('active'); // AR lives under the Financials menu
+  const nav=document.getElementById(n===6?'nav-ops':'nav-db'+(n===5?1:n===7?4:n)); if(nav)nav.classList.add('active'); // AR lives under Financials; Reviews (db7) under Marketing
   // A Chart.js canvas created (or last drawn) while its .db-panel was
   // display:none renders at 0x0 until explicitly resized — same fix already
   // applied to the Bills<->Membership view switch below (switchReconView).
   if(n===4 && typeof MKT_CHARTS!=='undefined'){ Object.values(MKT_CHARTS).forEach(c=>{ if(c)c.resize(); }); }
   if(n===6 && typeof MEM2_CHARTS!=='undefined'){ Object.values(MEM2_CHARTS).forEach(c=>{ if(c)c.resize(); }); }
+  if(n===7 && typeof rvOnShow==='function') rvOnShow();
 }
 
 // Bills Reconciliation <-> Membership Reconciliation view switch (dropdown
@@ -8933,6 +9047,549 @@ async function loadAndInitMemberships(){
 }
 </script>
 
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════
+// REVIEWS TAB (db7, added 2026-10-19) — mirrors Best Plumber's Reviews tab on
+// Cool Breeze's Google reviews. Source: "Reviews.xlsx" on Azure Blob (first
+// sheet; columns Name / Date (as shown on Google) / Approx. date / Rating /
+// Review comment / Technician), fetched with the shared fetchBlobXLSX().
+//
+// What is deliberately different from Best Plumber's tab (no matching data):
+//   • no Business Unit filter, Customer Feedback Channels pie, Number of
+//     Scans or Reviews Opportunity / Conversion Rate (the export has no
+//     business unit / account / QR-scan / review-request data);
+//   • Positive = 4-5 stars, Negative = 1-3 stars (derived from the star rating,
+//     same rule as the SK Fence Co Reviews tab) — there is no Rating column.
+//
+// DATES — Google only shows relative wording ("5 months ago", "2 years ago"),
+// so the export carries an approximate month, never a day:
+//   • "N months ago"  -> dated to that month (prec 'month'): counted in any
+//     date range that overlaps the month, plotted on the monthly charts.
+//   • "N years ago"   -> the file's approximate month is used as-is (approxYear
+//     flag, shown with a ~): treated like any other month-dated review, but the
+//     month may really be up to a year off.
+//   • a real date in a column named exactly "Date" (if the file ever gets
+//     one) is used as-is (prec 'day').
+// Default date range = month to date (1st of the current month -> today), on
+// load and on Reset; widen From to see older reviews.
+//
+// Own top-level <script> block, `rv`-prefixed globals. Reuses getCached/
+// setCache/fetchBlobXLSX/esc/fmtDate/shiftUTCMonths/todayISO/toggleMS/
+// renderJobPagination/exportJobsXLSX/JOB_PAGE_SIZE/MKT_CHARTS/destroyMkt/
+// renderChartPlaceholder from earlier script blocks.
+// ══════════════════════════════════════════════════════════════════════════
+const REVIEWS_CONFIG = {
+  sasUrl: "https://coolbreeze.blob.core.windows.net/coolbreeze/Reviews.xlsx?sp=r&st=2026-10-19T13:45:59Z&se=2030-10-19T22:00:59Z&spr=https&sv=2026-02-06&sr=b&sig=mTFhB%2FvfGOJWdEbUUE0wL7oUuxbGg0Qqn6MUlEbuUkQ%3D"
+};
+const REPORT_KEY_REVIEWS = 'reviewsGoogle';
+async function fetchReviewsBlob(){ return fetchBlobXLSX(REVIEWS_CONFIG.sasUrl); }
+
+const RV_MON_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const RV_MON_IDX = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,sept:8,oct:9,nov:10,dec:11,
+  january:0,february:1,march:2,april:3,june:5,july:6,august:7,september:8,october:9,november:10,december:11};
+function rvPad(n){ return String(n).padStart(2,'0'); }
+function rvISO(y,m,d){ return y+'-'+rvPad(m+1)+'-'+rvPad(d); }
+function rvMonthStart(y,m){ return rvISO(y,m,1); }
+function rvMonthEnd(y,m){ return rvISO(y,m,new Date(Date.UTC(y,m+1,0)).getUTCDate()); }
+function rvShiftMonth(y,m,delta){ const t=y*12+m+delta; return [Math.floor(t/12),((t%12)+12)%12]; }
+function rvMonthLabel(iso){ return iso ? RV_MON_ABBR[parseInt(iso.slice(5,7),10)-1]+' '+iso.slice(0,4) : '—'; }
+function rvNorm(h){ return String(h==null?'':h).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+
+const RV_ALIASES = {
+  name:    ['name','customer name','reviewer','reviewer name'],
+  gdate:   ['date as shown on google','relative date','posted'],
+  approx:  ['approx date','approximate date'],
+  date:    ['date'],
+  stars:   ['rating','stars','star rating','star number'],
+  review:  ['review comment','review','comment','review text'],
+  tech:    ['technician','technicians','tech mentions','mentions'],
+};
+
+// A real date in a plain "Date" column (Date object, ISO text, m/d/yyyy or Excel serial) -> 'YYYY-MM-DD'.
+function rvParseExactDate(v){
+  if(v==null || v==='') return null;
+  if(v instanceof Date){ if(isNaN(v)) return null; return new Date(v.getTime()+12*3600e3).toISOString().slice(0,10); }
+  if(typeof v==='number'){ if(v>20000 && v<80000) return new Date(Math.round((v-25569)*86400e3)+12*3600e3).toISOString().slice(0,10); return null; }
+  const s=String(v).trim();
+  let m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return m[1]+'-'+m[2]+'-'+m[3];
+  m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if(m) return m[3]+'-'+rvPad(+m[1])+'-'+rvPad(+m[2]);
+  return null;
+}
+// "May 2026" -> [2026,4]
+function rvParseMonthText(v){
+  if(v==null) return null;
+  const m=String(v).trim().match(/^([A-Za-z]{3,9})\.?\s+(\d{4})$/);
+  if(!m) return null;
+  const mi=RV_MON_IDX[m[1].toLowerCase()];
+  return mi==null ? null : [parseInt(m[2],10), mi];
+}
+// "5 months ago" / "a year ago" / "3 weeks ago" -> [year, monthIdx] relative to today (fallback when no Approx. date column)
+function rvParseRelative(s){
+  const m=String(s||'').trim().toLowerCase().match(/^(\d+|an?)\s+(minute|hour|day|week|month|year)s?\s+ago$/);
+  if(!m) return null;
+  const n=/^an?$/.test(m[1]) ? 1 : parseInt(m[1],10);
+  const now=new Date(); let y=now.getFullYear(), mo=now.getMonth();
+  if(m[2]==='year') return [y-n, mo];
+  if(m[2]==='month') return rvShiftMonth(y,mo,-n);
+  const days = m[2]==='week' ? n*7 : m[2]==='day' ? n : 0;
+  const d=new Date(now.getTime()-days*86400e3);
+  return [d.getFullYear(), d.getMonth()];
+}
+function rvResolveDate(exactV, approxV, relV){
+  const ex=rvParseExactDate(exactV);
+  if(ex) return {d8:ex, d8End:ex, prec:'day'};
+  const rel=String(relV==null?'':relV).trim();
+  const isYear=/year/i.test(rel);
+  const ym=rvParseMonthText(approxV) || rvParseRelative(rel);
+  if(!ym) return null;
+  const y=ym[0], m=ym[1];
+  // "N years ago" has no real month: the file's approximate month is used as-is (flagged approxYear).
+  return {d8:rvMonthStart(y,m), d8End:rvMonthEnd(y,m), prec:'month', approxYear:isYear};
+}
+
+function buildReviewsRows(raw){
+  const out=[]; let skipped=0, undated=0;
+  if(!raw || raw.length<2) return {rows:out, skipped, undated};
+  const norm=raw[0].map(rvNorm);
+  const ix={};
+  Object.keys(RV_ALIASES).forEach(k=>{
+    ix[k]=-1;
+    for(const a of RV_ALIASES[k]){ const i=norm.indexOf(a); if(i>=0){ ix[k]=i; break; } }
+  });
+  const cell=(r,k)=> ix[k]>=0 ? r[ix[k]] : null;
+  const txt=v=> v==null ? '' : String(v).replace(/\s+/g,' ').trim();
+  raw.slice(1).forEach((r,i)=>{
+    const name=txt(cell(r,'name')), review=txt(cell(r,'review'));
+    const stars=parseInt(String(cell(r,'stars')==null?'':cell(r,'stars')),10)||0;
+    if(!name && !review && !stars) return;                 // fully blank row
+    if(stars<1 || stars>5){ skipped++; return; }           // a review needs a 1-5 star rating
+    const dt=rvResolveDate(cell(r,'date'), cell(r,'approx'), cell(r,'gdate'));
+    if(!dt) undated++;
+    const techs=txt(cell(r,'tech')).split(',').map(s=>s.trim()).filter(s=>s && !/^no mention\.?$/i.test(s));
+    out.push({
+      id:i+1, name, review, stars,
+      rating: stars>=4 ? 'Positive' : 'Negative',
+      gdate:txt(cell(r,'gdate')),
+      d8:dt?dt.d8:'', d8End:dt?dt.d8End:'', prec:dt?dt.prec:'', approxYear:!!(dt&&dt.approxYear),
+      techs, techStr:techs.join(', ')
+    });
+  });
+  return {rows:out, skipped, undated};
+}
+
+// ── state ──
+let RV_ALL=[], rvDataReady=false, rvInited=false, rvStatus='Loading…', rvSkipped=0, rvUndated=0;
+let rvCompareMode='none';
+const RV_STARS=new Set();
+let rvSortKey='d8End', rvSortDir=-1, rvPage=1, rvSearchQuery='', rvSearchTimer=null, rvBase=[];
+let rvTechSortKey='mentions', rvTechSortDir=-1;
+
+function rvSetText(id,v){ const el=document.getElementById(id); if(el) el.textContent=v; }
+function rvSetHTML(id,h){ const el=document.getElementById(id); if(el) el.innerHTML=h; }
+
+// ── filters ──
+function rvStarsMatch(stars){ return RV_STARS.size===0 || RV_STARS.has(String(stars)); }
+function rvDefaultFrom(){ return monthStartISO(); }   // default range = month to date (1st of this month -> today)
+function rvRange(){
+  const f=document.getElementById('rvDateFrom'), t=document.getElementById('rvDateTo');
+  return { from:(f&&f.value)||rvDefaultFrom(), to:(t&&t.value)||todayISO() };
+}
+// month/day-dated reviews count when their month overlaps the range; year-only reviews only when
+// the range fully covers their 12-month window (see header comment).
+function rvInRange(r,from,to){
+  if(!r.d8) return false;
+  return r.d8End>=from && r.d8<=to;
+}
+function rvReviewsInRange(from,to){ return RV_ALL.filter(r=>rvInRange(r,from,to) && rvStarsMatch(r.stars)); }
+function rvCurrentRows(){ const {from,to}=rvRange(); return rvReviewsInRange(from,to); }
+function rvStarFilteredAll(){ return RV_ALL.filter(r=>rvStarsMatch(r.stars)); }
+
+function rvRenderStarsItems(){
+  const box=document.getElementById('rvStarsItems'); if(!box) return;
+  box.innerHTML=['5','4','3','2','1'].map(s=>'<label class="ms-item"><input type="checkbox" '+(RV_STARS.has(s)?'checked':'')+' onchange="rvToggleStar(\''+s+'\',this.checked)"><span>'+s+'-Star</span></label>').join('');
+}
+function rvUpdateStarsBtn(){
+  const btn=document.getElementById('rvStarsBtn'); if(!btn) return;
+  const n=RV_STARS.size;
+  btn.textContent = n>0 ? n+' selected ▾' : 'All Star Ratings ▾';
+  btn.classList.toggle('has-sel', n>0);
+}
+function rvToggleStar(s,checked){ checked?RV_STARS.add(s):RV_STARS.delete(s); rvUpdateStarsBtn(); rvApplyFilters(); }
+function rvSelectAllStars(){ ['5','4','3','2','1'].forEach(s=>RV_STARS.add(s)); rvRenderStarsItems(); rvUpdateStarsBtn(); rvApplyFilters(); }
+function rvClearStars(){ RV_STARS.clear(); rvRenderStarsItems(); rvUpdateStarsBtn(); rvApplyFilters(); }
+
+// ── compare ──
+const RV_COMPARE_LABELS={ last_period:'previous period', last_month:'last month', last_month_full:'last month', last_quarter:'last quarter', last_year:'last year' };
+function rvCompareDates(from,to){
+  if(rvCompareMode==='none') return null;
+  const f=from?new Date(from):null, t=to?new Date(to):new Date();
+  if(!f) return null;
+  const iso=d=>d.toISOString().slice(0,10);
+  if(rvCompareMode==='last_period'){
+    const dur=t-f, cTo=new Date(f.getTime()-86400000), cFrom=new Date(cTo.getTime()-dur);
+    return {from:iso(cFrom), to:iso(cTo)};
+  }
+  if(rvCompareMode==='last_month')   return {from:iso(shiftUTCMonths(f,-1)),  to:iso(shiftUTCMonths(t,-1))};
+  if(rvCompareMode==='last_quarter') return {from:iso(shiftUTCMonths(f,-3)),  to:iso(shiftUTCMonths(t,-3))};
+  if(rvCompareMode==='last_year')    return {from:iso(shiftUTCMonths(f,-12)), to:iso(shiftUTCMonths(t,-12))};
+  if(rvCompareMode==='last_month_full'){
+    const pm=shiftUTCMonths(f,-1), py=pm.getUTCFullYear(), pmi=pm.getUTCMonth();
+    return {from:iso(new Date(Date.UTC(py,pmi,1))), to:iso(new Date(Date.UTC(py,pmi,daysInUTCMonth(py,pmi))))};
+  }
+  return null;
+}
+function rvFmtDelta(curr,prev,prevFmt){
+  if(!prev || rvCompareMode==='none') return '';
+  const pct=(curr-prev)/Math.abs(prev)*100, absP=Math.abs(pct);
+  if(absP<0.05) return '';
+  const cls=pct>0?'up':'down', arrow=pct>0?'▲':'▼';
+  return '<div class="kpi-delta '+cls+'"><span class="kd-pill">'+arrow+' '+absP.toFixed(1)+'%</span><span class="kd-vs">vs '+(RV_COMPARE_LABELS[rvCompareMode]||'')+'</span>'+(prevFmt?'<span class="kd-was">was '+prevFmt+'</span>':'')+'</div>';
+}
+// Point-difference variant for rate/average KPIs; invert=true flips the colour (more Negative % is bad).
+function rvFmtDeltaPts(curr,prev,prevFmt,unit,invert){
+  if(prev==null || rvCompareMode==='none') return '';
+  const diff=curr-prev, absD=Math.abs(diff);
+  if(absD<0.05) return '';
+  const good = invert ? diff<0 : diff>0;
+  const cls=good?'up':'down', arrow=diff>0?'▲':'▼';
+  return '<div class="kpi-delta '+cls+'"><span class="kd-pill">'+arrow+' '+absD.toFixed(1)+' '+(unit||'pts')+'</span><span class="kd-vs">vs '+(RV_COMPARE_LABELS[rvCompareMode]||'')+'</span>'+(prevFmt?'<span class="kd-was">was '+prevFmt+'</span>':'')+'</div>';
+}
+
+// ── KPIs ──
+function rvStats(rows){
+  const total=rows.length;
+  const avg=total ? rows.reduce((a,r)=>a+r.stars,0)/total : 0;
+  const pos=rows.filter(r=>r.rating==='Positive').length;
+  const neg=rows.filter(r=>r.rating==='Negative').length;
+  return {total, avg, pos, neg, posPct:total?pos/total*100:0, negPct:total?neg/total*100:0};
+}
+function rvUpdateKPIs(rows){
+  const s=rvStats(rows);
+  rvSetText('rv-avgstars', s.total ? s.avg.toFixed(1) : '—');
+  rvSetText('rv-total', s.total.toLocaleString());
+  rvSetText('rv-positivepct', s.total ? Math.round(s.posPct)+'%' : '—');
+  rvSetText('rv-positivecount', s.pos.toLocaleString()+' Reviews Positive');
+  rvSetText('rv-negativepct', s.total ? Math.round(s.negPct)+'%' : '—');
+  rvSetText('rv-negativecount', s.neg.toLocaleString()+' Reviews Negative');
+  ['rvd-avgstars','rvd-total','rvd-positivepct','rvd-negativepct'].forEach(id=>rvSetHTML(id,''));
+  const {from,to}=rvRange();
+  const prevRange=rvCompareDates(from,to);
+  if(prevRange){
+    const p=rvStats(rvReviewsInRange(prevRange.from,prevRange.to));
+    if(s.total && p.total) rvSetHTML('rvd-avgstars', rvFmtDeltaPts(s.avg,p.avg,p.avg.toFixed(1),'stars'));
+    rvSetHTML('rvd-total', rvFmtDelta(s.total,p.total,p.total.toLocaleString()));
+    if(s.total && p.total) rvSetHTML('rvd-positivepct', rvFmtDeltaPts(s.posPct,p.posPct,Math.round(p.posPct)+'%'));
+    if(s.total && p.total) rvSetHTML('rvd-negativepct', rvFmtDeltaPts(s.negPct,p.negPct,Math.round(p.negPct)+'%',null,true));
+  }
+}
+
+// ── date labels ──
+function rvDateText(r){
+  if(!r.d8) return '—';
+  if(r.prec==='day') return fmtDate(new Date(r.d8+'T12:00:00'));
+  return (r.approxYear?'~':'')+rvMonthLabel(r.d8);
+}
+function rvDateHTML(r){
+  if(r.approxYear) return '<span class="rv-approx" title="Google only says &quot;'+esc(r.gdate)+'&quot; — the month shown is an approximation (could be off by up to a year).">'+esc(rvDateText(r))+'</span>';
+  return esc(rvDateText(r));
+}
+function rvStarsHTML(n){ return '<span class="rv-stars">'+'★'.repeat(n)+'</span>'; }
+
+// ── negative list ──
+function rvRenderNegativeList(rows){
+  const body=document.getElementById('rvNegativeListBody'), cnt=document.getElementById('rv-neglist-count');
+  const neg=rows.filter(r=>r.rating==='Negative').slice().sort((a,b)=>(b.d8End||'').localeCompare(a.d8End||'') || (b.d8||'').localeCompare(a.d8||''));
+  if(cnt) cnt.textContent=neg.length.toLocaleString()+' review'+(neg.length!==1?'s':'');
+  if(body) body.innerHTML = neg.length
+    ? neg.map(r=>'<tr><td style="white-space:nowrap;font-weight:700;vertical-align:top">'+esc(r.name)+'<span class="rv-sub">'+rvDateHTML(r)+'</span></td><td style="vertical-align:top">'+rvStarsHTML(r.stars)+'</td><td class="rv-rev">'+(r.review?esc(r.review):'<span style="color:var(--gray-500)">(star rating only)</span>')+'</td></tr>').join('')
+    : '<tr><td colspan="3" style="text-align:center;color:var(--gray-500);padding:20px">No negative reviews in the current range</td></tr>';
+}
+
+// ── technicians ──
+function rvRenderTechTable(rows){
+  const body=document.getElementById('rvTechBody'); if(!body) return;
+  const map={};
+  rows.forEach(r=>r.techs.forEach(n=>{
+    if(!map[n]) map[n]={name:n, mentions:0, starSum:0};
+    map[n].mentions++; map[n].starSum+=r.stars;
+  }));
+  const list=Object.values(map).map(t=>({...t, avgStars:t.mentions?t.starSum/t.mentions:0}))
+    .sort((a,b)=>b.mentions-a.mentions || a.name.localeCompare(b.name)).slice(0,20);
+  list.sort((a,b)=>{
+    const av=a[rvTechSortKey], bv=b[rvTechSortKey];
+    if(typeof av==='number' && typeof bv==='number') return (av-bv)*rvTechSortDir;
+    return String(av).localeCompare(String(bv))*rvTechSortDir;
+  });
+  const anyTech=RV_ALL.some(r=>r.techs.length);
+  body.innerHTML = list.length
+    ? list.map(t=>'<tr><td>'+esc(t.name)+'</td><td>'+t.mentions.toLocaleString()+'</td><td>'+t.avgStars.toFixed(1)+'</td></tr>').join('')
+    : '<tr><td colspan="3" style="text-align:center;color:var(--gray-500);padding:20px">'+(anyTech?'No technician mentions in the current range':'No technician names yet — the Technician column in Reviews.xlsx is empty. Fill it in (comma-separated for several) and this table populates.')+'</td></tr>';
+  [['name','rvtechth-name'],['mentions','rvtechth-mentions'],['avgStars','rvtechth-avgStars']].forEach(p=>{
+    const th=document.getElementById(p[1]); if(!th) return;
+    th.classList.remove('sort-asc','sort-desc');
+    if(p[0]===rvTechSortKey) th.classList.add(rvTechSortDir===1?'sort-asc':'sort-desc');
+  });
+}
+function rvSortTech(key){
+  if(rvTechSortKey===key) rvTechSortDir*=-1; else { rvTechSortKey=key; rvTechSortDir=key==='name'?1:-1; }
+  rvRenderTechTable(rvCurrentRows());
+}
+
+// ── charts ──
+function rvChartVisible(canvas){ const w=canvas&&canvas.parentElement; if(!w) return null; w.querySelectorAll('.mkt-placeholder').forEach(n=>n.remove()); canvas.style.display=''; return canvas; }
+// First month for which Google gave us a month-level date; earlier periods only have year-level dates.
+function rvMonthCoverageStart(){
+  const ms=RV_ALL.filter(r=>r.d8 && r.prec!=='year').map(r=>r.d8.slice(0,7)).sort();
+  return ms.length ? ms[0] : null;
+}
+function rvRenderRunningTotalChart(){
+  destroyMkt('rvRunning');
+  const canvas=document.getElementById('rvRunningTotalChart'); if(!canvas) return;
+  const rows=rvStarFilteredAll().filter(r=>r.d8 && r.prec!=='year');
+  const allYears=[...new Set(rows.map(r=>r.d8.slice(0,4)))].sort();
+  // Years shown: the current calendar year and the (N-1) before it (default last 3; selector offers more / all).
+  const ysel=document.getElementById('rvRunningYearsSel'), yn=ysel?ysel.value:'3';
+  const minYear = yn==='ALL' ? 0 : new Date().getFullYear()-(parseInt(yn,10)||3)+1;
+  const years=allYears.filter(y=>parseInt(y,10)>=minYear);
+  if(!years.length){ renderChartPlaceholder('rvRunningTotalChart', allYears.length ? 'No reviews in the selected years — choose more years' : 'No reviews with a month-level date'); return; }
+  rvChartVisible(canvas);
+  const cov=rvMonthCoverageStart();                       // 'YYYY-MM'
+  const now=new Date(), curKey=now.getFullYear()+'-'+rvPad(now.getMonth()+1);
+  const byYM={}; years.forEach(y=>{ byYM[y]=Array(12).fill(0); });
+  rows.forEach(r=>{ const a=byYM[r.d8.slice(0,4)]; if(a) a[parseInt(r.d8.slice(5,7),10)-1]++; });
+  const palette=['#3B6FD1','#2E8B57','#D9A441','#B23225','#6A3FA0','#0E93A8','#E08A1E','#8F0D06','#2E9BD6','#E91E8C','#7A8BA0'];
+  const datasets=years.map((y,i)=>{
+    let run=0;
+    const data=byYM[y].map((n,mi)=>{
+      const key=y+'-'+rvPad(mi+1);
+      run+=n;
+      if((cov && key<cov) || key>curKey) return null;     // no data before month-level coverage / not yet happened
+      return run;
+    });
+    return {label:y, data, borderColor:palette[allYears.indexOf(y)%palette.length], backgroundColor:palette[allYears.indexOf(y)%palette.length], fill:false, tension:.25, pointRadius:2, spanGaps:false};
+  });
+  // value label above every plotted point, in its line's colour (labels sit below the point when a
+  // higher line would collide with them at that month)
+  const pointLabels={
+    id:'rvPointLabels',
+    afterDatasetsDraw(chart){
+      const {ctx}=chart; ctx.save();
+      ctx.font='bold 11px sans-serif'; ctx.textAlign='center';
+      chart.data.datasets.forEach((ds,di)=>{
+        const meta=chart.getDatasetMeta(di); if(meta.hidden) return;
+        ctx.fillStyle=ds.borderColor;
+        meta.data.forEach((pt,i)=>{
+          const v=ds.data[i]; if(v==null || !pt) return;
+          let below=false;
+          chart.data.datasets.forEach((o,oi)=>{ if(oi!==di && o.data[i]!=null && o.data[i]>v && o.data[i]-v<=2) below=true; });
+          ctx.textBaseline=below?'top':'bottom';
+          ctx.fillText(String(v), pt.x, pt.y+(below?7:-7));
+        });
+      });
+      ctx.restore();
+    }
+  };
+  MKT_CHARTS.rvRunning=new Chart(canvas,{
+    type:'line',
+    data:{labels:RV_MON_ABBR, datasets},
+    plugins:[pointLabels],
+    options:{responsive:true, maintainAspectRatio:false, layout:{padding:{top:18}}, plugins:{legend:{position:'bottom'}}, scales:{y:{beginAtZero:true, ticks:{precision:0}}}}
+  });
+}
+function rvBuildYearOptions(){
+  const sel=document.getElementById('rvPosNegYearSel'); if(!sel) return;
+  const years=new Set(); RV_ALL.forEach(r=>{ if(r.d8 && r.prec!=='year') years.add(r.d8.slice(0,4)); });
+  const sorted=[...years].sort((a,b)=>b.localeCompare(a));
+  const cur=String(new Date().getFullYear());
+  const prev=sel.value;
+  sel.innerHTML='<option value="ALL">All Years</option>'+sorted.map(y=>'<option value="'+y+'">'+y+'</option>').join('');
+  sel.value=(prev && (prev==='ALL' || sorted.includes(prev))) ? prev : (sorted.includes(cur) ? cur : 'ALL');
+}
+function rvRenderPosNegChart(){
+  destroyMkt('rvPosNeg');
+  const canvas=document.getElementById('rvPosNegChart'); if(!canvas) return;
+  const ysel=document.getElementById('rvPosNegYearSel');
+  const yf=(ysel && ysel.value && ysel.value!=='ALL') ? ysel.value : null;
+  let rows=rvStarFilteredAll().filter(r=>r.d8 && r.prec!=='year');
+  if(yf) rows=rows.filter(r=>r.d8.slice(0,4)===yf);
+  const present=[...new Set(rows.map(r=>r.d8.slice(0,7)))].sort();
+  if(!present.length){ renderChartPlaceholder('rvPosNegChart', yf?('No reviews in '+yf):'No reviews with a month-level date'); return; }
+  rvChartVisible(canvas);
+  // contiguous months first..last so quiet months show as empty slots
+  const keys=[]; { let [y,m]=present[0].split('-').map(Number); const [ly,lm]=present[present.length-1].split('-').map(Number);
+    while(y<ly || (y===ly && m<=lm)){ keys.push(y+'-'+rvPad(m)); m++; if(m>12){ m=1; y++; } } }
+  const pos=keys.map(k=>rows.filter(r=>r.d8.slice(0,7)===k && r.rating==='Positive').length);
+  const neg=keys.map(k=>rows.filter(r=>r.d8.slice(0,7)===k && r.rating==='Negative').length);
+  const totalLabel={
+    id:'rvTotalLabel',
+    afterDatasetsDraw(chart){
+      const {ctx,data}=chart; ctx.save();
+      ctx.font='bold 11px sans-serif'; ctx.fillStyle='#132537'; ctx.textAlign='center'; ctx.textBaseline='bottom';
+      for(let i=0;i<data.labels.length;i++){
+        let total=0, topY=null, x=null;
+        for(let d=0; d<data.datasets.length; d++){
+          const v=data.datasets[d].data[i]||0; total+=v;
+          const el=chart.getDatasetMeta(d).data[i]; if(!el) continue;
+          x=el.x; if(v>0) topY=el.y;
+        }
+        if(total>0 && topY!==null) ctx.fillText(total.toLocaleString(), x, topY-4);
+      }
+      ctx.restore();
+    }
+  };
+  MKT_CHARTS.rvPosNeg=new Chart(canvas,{
+    type:'bar',
+    data:{labels:keys.map(k=>rvMonthLabel(k+'-01')), datasets:[
+      {label:'Reviews Positive', data:pos, backgroundColor:'#2E8B57', borderColor:'#fff', borderWidth:2, borderSkipped:false, stack:'posneg'},
+      {label:'Reviews Negative', data:neg, backgroundColor:'#B23225', borderColor:'#fff', borderWidth:2, borderSkipped:false, stack:'posneg'}
+    ]},
+    plugins:[totalLabel],
+    options:{responsive:true, maintainAspectRatio:false, layout:{padding:{top:20}},
+      plugins:{legend:{position:'bottom'}, tooltip:{mode:'index', intersect:false, filter:i=>i.parsed.y>0, callbacks:{footer:items=>'Total: '+items.reduce((a,it)=>a+it.parsed.y,0)}}},
+      scales:{x:{stacked:true}, y:{stacked:true, beginAtZero:true, ticks:{precision:0}}}}
+  });
+}
+function rvRenderYearNote(){
+  const all=rvStarFilteredAll();
+  const yearOnly=all.filter(r=>r.approxYear).length;
+  const cov=rvMonthCoverageStart();
+  rvSetText('rv-yearnote', yearOnly
+    ? yearOnly.toLocaleString()+' of '+all.length.toLocaleString()+' reviews are dated by Google only to the year (“2 years ago”); they are plotted on the approximate month from the file, so older months/years are approximate.'
+    : '');
+}
+
+// ── detail table ──
+function rvRowMatchesSearch(r){
+  if(!rvSearchQuery) return true;
+  return (r.name+' '+r.review+' '+r.techStr).toLowerCase().includes(rvSearchQuery);
+}
+function rvTableRows(){
+  const rows=(rvBase||[]).filter(rvRowMatchesSearch);
+  return rows.slice().sort((a,b)=>{
+    let va=a[rvSortKey], vb=b[rvSortKey];
+    if(va==null) va=''; if(vb==null) vb='';
+    let c = (typeof va==='number' && typeof vb==='number') ? (va-vb) : String(va).localeCompare(String(vb));
+    if(c===0 && rvSortKey==='d8End') c=(a.d8||'').localeCompare(b.d8||'');
+    return c*rvSortDir;
+  });
+}
+function rvRenderTable(){
+  const rows=rvTableRows();
+  rvSetText('rv-count', rows.length.toLocaleString()+' review'+(rows.length!==1?'s':''));
+  const start=(rvPage-1)*JOB_PAGE_SIZE, page=rows.slice(start,start+JOB_PAGE_SIZE);
+  const body=document.getElementById('rvBody');
+  if(body) body.innerHTML = page.length
+    ? page.map(r=>'<tr><td class="td-cust">'+esc(r.name)+'</td><td style="white-space:nowrap">'+rvDateHTML(r)+'</td><td style="white-space:nowrap;color:var(--gray-500)">'+esc(r.gdate||'—')+'</td><td>'+esc(r.techStr||'—')+'</td><td>'+rvStarsHTML(r.stars)+'</td><td class="rv-rev">'+(r.review?esc(r.review):'<span style="color:var(--gray-500)">(star rating only)</span>')+'</td></tr>').join('')
+    : '<tr><td colspan="6" style="text-align:center;color:var(--gray-500);padding:20px">No reviews match the current filters</td></tr>';
+  [['name','rvth-name'],['d8End','rvth-d8End'],['techStr','rvth-techStr'],['stars','rvth-stars']].forEach(p=>{
+    const th=document.getElementById(p[1]); if(!th) return;
+    th.classList.remove('sort-asc','sort-desc');
+    if(p[0]===rvSortKey) th.classList.add(rvSortDir===1?'sort-asc':'sort-desc');
+  });
+  renderJobPagination('rvPagination', rows.length, rvPage, 'goRvPage');
+}
+function rvSortReviews(key){
+  if(rvSortKey===key) rvSortDir*=-1; else { rvSortKey=key; rvSortDir=(key==='d8End'||key==='stars')?-1:1; }
+  rvPage=1; rvRenderTable();
+}
+function goRvPage(p){ rvPage=p; rvRenderTable(); }
+function rvOnSearchInput(v){
+  clearTimeout(rvSearchTimer);
+  rvSearchTimer=setTimeout(()=>{ rvSearchQuery=String(v||'').trim().toLowerCase(); rvPage=1; rvRenderTable(); },200);
+}
+function rvExportXLSX(){
+  exportJobsXLSX('Coolbreeze_Reviews.xlsx', ['Customer Name','Date (approx.)','Google Date','Technician','Stars','Review'],
+    rvTableRows().map(r=>[r.name, rvDateText(r), r.gdate, r.techStr, r.stars, r.review]));
+}
+
+// ── orchestration ──
+function rvApplyFilters(){
+  const rows=rvCurrentRows();
+  rvUpdateKPIs(rows);
+  rvRenderNegativeList(rows);
+  rvRenderTechTable(rows);
+  rvBase=rows; rvPage=1;
+  rvRenderTable();
+  rvRenderRunningTotalChart();
+  rvRenderPosNegChart();
+  rvRenderYearNote();
+  const el=document.getElementById('rv-finfo');
+  if(el){
+    if(!rvDataReady){
+      el.textContent = rvStatus.indexOf('Failed')===0 ? '⚠ Reviews data unavailable — '+rvStatus.slice(0,90) : 'Loading reviews data…';
+      el.style.color = rvStatus.indexOf('Failed')===0 ? '#fca5a5' : '';
+    } else {
+      const yearOnly=RV_ALL.filter(r=>r.approxYear).length;
+      let t=RV_ALL.length.toLocaleString()+' reviews loaded ('+(RV_ALL.length-yearOnly-rvUndated).toLocaleString()+' dated to the month, '+yearOnly.toLocaleString()+' approximate ("years ago")';
+      if(rvUndated) t+=', '+rvUndated+' undated';
+      t+=')';
+      if(rvSkipped) t+=' · '+rvSkipped+' row(s) skipped (no 1-5 star rating)';
+      if(rvStatus!=='OK') t+='  ⚠ '+rvStatus.slice(0,80);
+      el.textContent=t;
+      el.style.color = rvStatus!=='OK' ? '#fca5a5' : '';
+    }
+  }
+}
+function rvResetFilters(){
+  const f=document.getElementById('rvDateFrom'), t=document.getElementById('rvDateTo');
+  if(f) f.value=rvDefaultFrom(); if(t) t.value=todayISO();
+  RV_STARS.clear(); rvRenderStarsItems(); rvUpdateStarsBtn();
+  rvCompareMode='none'; const cs=document.getElementById('rvCompareSel'); if(cs) cs.value='none';
+  const se=document.getElementById('rvSearch'); if(se) se.value='';
+  rvSearchQuery='';
+  rvApplyFilters();
+}
+function rvInitPage(){
+  if(!rvInited){
+    rvInited=true;
+    const f=document.getElementById('rvDateFrom'), t=document.getElementById('rvDateTo');
+    if(f) f.value=rvDefaultFrom();
+    if(t) t.value=todayISO();
+    rvRenderStarsItems(); rvUpdateStarsBtn();
+  }
+  rvBuildYearOptions();
+  rvApplyFilters();
+}
+function rvIngest(raw){
+  const b=buildReviewsRows(raw);
+  RV_ALL=b.rows; rvSkipped=b.skipped; rvUndated=b.undated;
+  rvDataReady=true;
+  rvInitPage();
+}
+// Charts created while the panel was display:none have no size — rebuild them when the tab is shown (called from showDB(7)).
+function rvOnShow(){
+  if(!rvInited) return;
+  rvRenderRunningTotalChart();
+  rvRenderPosNegChart();
+}
+async function loadAndInitReviews(force){
+  const finfo=document.getElementById('rv-finfo');
+  if(!force){
+    const cached=getCached(REPORT_KEY_REVIEWS);
+    if(cached){ try{ rvIngest(cached); }catch(e){ console.warn('[Reviews tab] cached rows unreadable:',e); } }
+  } else if(finfo){ finfo.textContent='Refreshing…'; }
+  try{
+    const rows=await fetchReviewsBlob();
+    setCache(REPORT_KEY_REVIEWS, rows);
+    rvStatus='OK';
+    rvIngest(rows);
+  }catch(e){
+    console.warn('[Reviews tab] Reviews.xlsx fetch failed:',e);
+    rvStatus='Failed: '+e.message;
+    if(!rvInited) rvInitPage(); else rvApplyFilters();
+  }
+}
+
+// Hard Refresh (clearAllCache) also clears this tab's cache slot.
+const _origClearAllCacheRv=clearAllCache;
+clearAllCache=function(){
+  _origClearAllCacheRv();
+  try{ localStorage.removeItem('cb_'+REPORT_KEY_REVIEWS); }catch(e){}
+};
+
+document.addEventListener('DOMContentLoaded', ()=>loadAndInitReviews(false));
+</script>
+
 </body>
 </html>
-  
