@@ -677,6 +677,7 @@ td.rc-copy.rc-copied{background:rgba(15,165,114,.25)!important}
     <button data-sub="overview" onclick="showDB(4);switchMktPage('overview');navPick('mktDropdown','overview')" class="active"><span class="tn-dd-ic">🏠</span><span>Overview</span></button>
     <button data-sub="calls" onclick="showDB(4);switchMktPage('calls');navPick('mktDropdown','calls')"><span class="tn-dd-ic">📞</span><span>Call Analysis</span></button>
     <button data-sub="reviews" onclick="showDB(7);navPick('mktDropdown','reviews')"><span class="tn-dd-ic">⭐</span><span>Reviews</span></button>
+    <button data-sub="customers" onclick="showDB(8);navPick('mktDropdown','customers')"><span class="tn-dd-ic">🗂️</span><span>Customer Overview</span></button>
   </div>
   </div>
   <div class="topnav-item">
@@ -1980,7 +1981,7 @@ td.rc-copy.rc-copied{background:rgba(15,165,114,.25)!important}
   </div>
 
   <div class="tcard">
-    <div class="thead-row"><div class="tcard-title">Technicians Most Mentioned in Customer Reviews <span class="tip-ic" data-tip="The Technician column of Reviews.xlsx split on commas, grouped per technician across reviews in the selected date range/filters (top 20 by mentions). Avg Star Rating = average stars of the reviews that mention that technician.">ⓘ</span></div></div>
+    <div class="thead-row"><div class="tcard-title">Technicians Most Mentioned in Customer Reviews <span class="tip-ic" data-tip="The Technician column (not provided by the Windsor.ai feed, so currently empty) split on commas, grouped per technician across reviews in the selected date range/filters (top 20 by mentions). Avg Star Rating = average stars of the reviews that mention that technician.">ⓘ</span></div></div>
     <div class="tbl-wrap">
       <table><thead><tr>
         <th onclick="rvSortTech('name')" id="rvtechth-name">Name</th>
@@ -1993,7 +1994,7 @@ td.rc-copy.rc-copied{background:rgba(15,165,114,.25)!important}
 
   <div class="tcard">
     <div class="thead-row">
-      <div class="tcard-title">Reviews <span class="tip-ic" data-tip="Every review in Reviews.xlsx for the selected date range/filters. 'Date' is Google's relative wording converted to an approximate month (~ = Google only gave a year); 'Google Date' is the original wording.">ⓘ</span></div>
+      <div class="tcard-title">Reviews <span class="tip-ic" data-tip="Every Google review from Windsor.ai for the selected date range/filters. 'Date' is Google's relative wording converted to an approximate month (~ = Google only gave a year); 'Google Date' is the original wording.">ⓘ</span></div>
       <div class="thead-right">
         <input class="search-box" type="text" id="rvSearch" placeholder="Search customer, review, technician…" oninput="rvOnSearchInput(this.value)">
         <button class="btn-export" onclick="rvExportXLSX()">⬇ Export Excel</button>
@@ -2016,6 +2017,153 @@ td.rc-copy.rc-copied{background:rgba(15,165,114,.25)!important}
 </div>
 </div><!-- /db7 -->
 
+
+<div class="db-panel" id="db8">
+<div class="fbar">
+  <span id="cdbFltSearch" style="display:contents">
+  <label>Search</label>
+  <input class="search-box" type="text" id="cdbSearch" placeholder="Search name, ID, address, city, zip…" oninput="cdbApplyFilters()">
+  </span>
+
+  <span id="cdbFltType" style="display:contents">
+  <label>Type</label>
+  <div class="ms-wrap" id="cdbTypeWrap">
+    <button class="ms-btn" id="cdbTypeBtn" onclick="toggleMS('cdbType',event)">All Types ▾</button>
+    <div class="ms-panel" id="cdbTypePanel">
+      <input class="ms-search" type="text" placeholder="Search types…" oninput="cdbRenderMS('type',this.value)">
+      <div class="ms-actions"><button onclick="cdbSelectAllMS('type')">Select All</button><button onclick="cdbClearMS('type')">Clear</button></div>
+      <div id="cdbTypeItems"></div>
+    </div>
+  </div>
+  </span>
+
+  <span id="cdbFltCity" style="display:contents">
+  <label>City</label>
+  <div class="ms-wrap" id="cdbCityWrap">
+    <button class="ms-btn" id="cdbCityBtn" onclick="toggleMS('cdbCity',event)">All Cities ▾</button>
+    <div class="ms-panel" id="cdbCityPanel">
+      <input class="ms-search" type="text" placeholder="Search cities…" oninput="cdbRenderMS('city',this.value)">
+      <div class="ms-actions"><button onclick="cdbSelectAllMS('city')">Select All</button><button onclick="cdbClearMS('city')">Clear</button></div>
+      <div id="cdbCityItems"></div>
+    </div>
+  </div>
+  </span>
+
+  <span id="cdbFltZip" style="display:contents">
+  <label>Zip Code</label>
+  <div class="ms-wrap" id="cdbZipWrap">
+    <button class="ms-btn" id="cdbZipBtn" onclick="toggleMS('cdbZip',event)">All Zip Codes ▾</button>
+    <div class="ms-panel" id="cdbZipPanel">
+      <input class="ms-search" type="text" placeholder="Search zip codes…" oninput="cdbRenderMS('zip',this.value)">
+      <div class="ms-actions"><button onclick="cdbSelectAllMS('zip')">Select All</button><button onclick="cdbClearMS('zip')">Clear</button></div>
+      <div id="cdbZipItems"></div>
+    </div>
+  </div>
+  </span>
+
+  <span id="cdbFltPaying" style="display:contents">
+  <label><input type="checkbox" id="cdbPayingOnly" onchange="cdbApplyFilters()" style="margin-right:4px;vertical-align:middle"> Paying customers only</label>
+  </span>
+
+  <button class="btn-reset" onclick="cdbResetFilters()">Reset</button>
+  <button class="btn-reset" onclick="cdbLoad(true)">↻ Refresh</button>
+  <span class="finfo" id="cdb-finfo">Loading customers data…</span>
+</div>
+
+<div class="main">
+  <div class="section-lbl">🗂️ Customer Overview</div>
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px">
+    <div class="kpi"><div class="kpi-ico">👥</div><div class="kpi-lbl">Total Customers <span class="tip-ic" data-tip="Every customer record in the Customer List export matching the current filters — the whole database, not scoped to any date range.">ⓘ</span></div><div class="kpi-val" id="cdb-total">—</div></div>
+    <div class="kpi"><div class="kpi-ico">💵</div><div class="kpi-lbl">Paying Customers <span class="tip-ic" data-tip="Customers with Customers Lifetime Revenue greater than $0. Needs a Customers Lifetime Revenue column in the Customer List export — shows — until it is added.">ⓘ</span></div><div class="kpi-val" id="cdb-paying">—</div><div class="kpi-sub" id="cdb-paying-pct"></div></div>
+    <div class="kpi"><div class="kpi-ico">🪪</div><div class="kpi-lbl">Active Members <span class="tip-ic" data-tip="Customers whose Member Status is Active, among those matching the current filters. Needs a Member Status column in the Customer List export — shows — until it is added.">ⓘ</span></div><div class="kpi-val" id="cdb-activemembers">—</div><div class="kpi-sub" id="cdb-activemembers-pct"></div></div>
+    <div class="kpi"><div class="kpi-ico">🎫</div><div class="kpi-lbl">Avg Ticket (Paying) <span class="tip-ic" data-tip="Total Lifetime Revenue ÷ Paying Customers — the average revenue per paying customer. Needs a Customers Lifetime Revenue column in the export.">ⓘ</span></div><div class="kpi-val" id="cdb-avgticket">—</div><div class="kpi-sub" id="cdb-avgticket-sub"></div></div>
+    <div class="kpi"><div class="kpi-ico">📍</div><div class="kpi-lbl">Cities / Zip Codes Served <span class="tip-ic" data-tip="Distinct cities and zip codes among customers matching the current filters (blank/invalid addresses excluded). Needs City and Zip Code columns in the Customer List export — the current export only has a Street Address.">ⓘ</span></div><div class="kpi-val" id="cdb-footprint" style="font-size:20px">—</div><div class="kpi-sub" id="cdb-footprint-sub"></div></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+    <div class="card">
+      <div class="ct">Top 15 Zip Codes by Total Lifetime Revenue <span class="tip-ic" data-tip="Sum of Customers Lifetime Revenue grouped by Zip Code, highest first. Customers with a missing/invalid zip are excluded from this chart (see the Unknown row in the table below).">ⓘ</span></div>
+      <div class="chart-wrap" style="height:320px"><canvas id="cdbZipRevenueChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="ct">Top 15 Zip Codes by Avg Ticket <span class="tip-ic" data-tip="Total Lifetime Revenue ÷ Paying Customers, grouped by Zip Code, highest first — restricted to zip codes with at least 5 paying customers so one big job doesn't skew a thin zip to the top. Use this to spot where your existing customers are worth more, not just where you have the most of them.">ⓘ</span></div>
+      <div class="chart-wrap" style="height:320px"><canvas id="cdbZipAvgTicketChart"></canvas></div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+    <div class="card">
+      <div class="ct">Customers by City <span class="tip-ic" data-tip="Count of customers grouped by City, top 15. Where the existing customer base is concentrated — read alongside the Avg Ticket chart, a high-value zip with a thin customer count may be worth more marketing spend than a crowded but low-ticket one.">ⓘ</span></div>
+      <div class="chart-wrap" style="height:320px"><canvas id="cdbCityCountChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="ct">Customer Type <span class="tip-ic" data-tip="Split of customers matching the current filters by the Type (entity) column of the Customer List export. Customers with no type set are shown as Unknown.">ⓘ</span></div>
+      <div class="chart-wrap" style="height:320px"><canvas id="cdbTypePieChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="tcard" style="margin-bottom:20px">
+    <div class="thead-row">
+      <div class="tcard-title">Revenue by Zip Code <span class="tip-ic" data-tip="Every zip code with at least one customer, sortable by any column. 'Unknown' rolls up every customer with a missing/invalid Zip Code in the source file — shown for transparency, not silently dropped.">ⓘ</span></div>
+      <div class="thead-right">
+        <button class="btn-export" onclick="cdbExportZip()">⬇ Export Excel</button>
+        <span class="tcnt" id="cdbZip-count">— zip codes</span>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th onclick="cdbSortZip('zip')" id="cdbZipTh-zip">Zip Code</th>
+        <th onclick="cdbSortZip('city')" id="cdbZipTh-city">City</th>
+        <th onclick="cdbSortZip('customers')" id="cdbZipTh-customers">Customers</th>
+        <th onclick="cdbSortZip('paying')" id="cdbZipTh-paying">Paying Customers</th>
+        <th onclick="cdbSortZip('revenue')" id="cdbZipTh-revenue" class="sort-desc">Total Lifetime Revenue</th>
+        <th onclick="cdbSortZip('avgTicketAll')" id="cdbZipTh-avgTicketAll">Avg Revenue / Customer</th>
+        <th onclick="cdbSortZip('avgTicketPaying')" id="cdbZipTh-avgTicketPaying">Avg Ticket (Paying)</th>
+      </tr></thead>
+      <tbody id="cdbZipBody"></tbody>
+      <tfoot id="cdbZipFoot"></tfoot></table>
+    </div>
+  </div>
+
+  <div class="tcard" style="margin-bottom:20px">
+    <div class="thead-row">
+      <div class="tcard-title">Revenue by City <span class="tip-ic" data-tip="Same rollup as the zip code table above, grouped by City instead.">ⓘ</span></div>
+      <div class="thead-right">
+        <button class="btn-export" onclick="cdbExportCity()">⬇ Export Excel</button>
+        <span class="tcnt" id="cdbCity-count">— cities</span>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th onclick="cdbSortCity('city')" id="cdbCityTh-city">City</th>
+        <th onclick="cdbSortCity('customers')" id="cdbCityTh-customers">Customers</th>
+        <th onclick="cdbSortCity('paying')" id="cdbCityTh-paying">Paying Customers</th>
+        <th onclick="cdbSortCity('revenue')" id="cdbCityTh-revenue" class="sort-desc">Total Lifetime Revenue</th>
+        <th onclick="cdbSortCity('avgTicketAll')" id="cdbCityTh-avgTicketAll">Avg Revenue / Customer</th>
+        <th onclick="cdbSortCity('avgTicketPaying')" id="cdbCityTh-avgTicketPaying">Avg Ticket (Paying)</th>
+      </tr></thead>
+      <tbody id="cdbCityBody"></tbody>
+      <tfoot id="cdbCityFoot"></tfoot></table>
+    </div>
+  </div>
+
+  <div class="tcard">
+    <div class="thead-row">
+      <div class="tcard-title">Customer Directory <span class="tip-ic" data-tip="Every customer matching the current filters/search, from the Customer List export. The search box here narrows this table only, on top of the filters and Search box above. Jobs Completed is the Completed Jobs count for the date range the export was run for (not necessarily all-time). Columns the export doesn't carry (City, Zip Code, Original Campaign, Lifetime Revenue…) are left out and appear automatically once added to the export.">ⓘ</span></div>
+      <div class="thead-right">
+        <input class="search-box" type="text" id="cdbDirSearch" placeholder="Search this table…" oninput="cdbOnDirSearch(this.value)">
+        <button class="btn-export" onclick="cdbExportDir()">⬇ Export Excel</button>
+        <span class="tcnt" id="cdbDir-count">— customers</span>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr id="cdbDirHead"></tr></thead>
+      <tbody id="cdbDirBody"></tbody></table>
+    </div>
+    <div class="pg" id="cdbDirPagination"></div>
+  </div>
+</div>
+</div><!-- /db8 -->
 
 </div><!-- /app-shell -->
 
@@ -3085,13 +3233,14 @@ function showDB(n){
   document.querySelectorAll('.db-panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.sidebar-item').forEach(b=>b.classList.remove('active'));
   const panel=document.getElementById('db'+n); if(panel)panel.classList.add('active');
-  const nav=document.getElementById(n===6?'nav-ops':'nav-db'+(n===5?1:n===7?4:n)); if(nav)nav.classList.add('active'); // AR lives under Financials; Reviews (db7) under Marketing
+  const nav=document.getElementById(n===6?'nav-ops':'nav-db'+(n===5?1:(n===7||n===8)?4:n)); if(nav)nav.classList.add('active'); // AR lives under Financials; Reviews (db7) and Customer Overview (db8) under Marketing
   // A Chart.js canvas created (or last drawn) while its .db-panel was
   // display:none renders at 0x0 until explicitly resized — same fix already
   // applied to the Bills<->Membership view switch below (switchReconView).
   if(n===4 && typeof MKT_CHARTS!=='undefined'){ Object.values(MKT_CHARTS).forEach(c=>{ if(c)c.resize(); }); }
   if(n===6 && typeof MEM2_CHARTS!=='undefined'){ Object.values(MEM2_CHARTS).forEach(c=>{ if(c)c.resize(); }); }
   if(n===7 && typeof rvOnShow==='function') rvOnShow();
+  if(n===8 && typeof cdbOnShow==='function') cdbOnShow();
 }
 
 // Bills Reconciliation <-> Membership Reconciliation view switch (dropdown
@@ -9051,9 +9200,10 @@ async function loadAndInitMemberships(){
 <script>
 // ══════════════════════════════════════════════════════════════════════════
 // REVIEWS TAB (db7, added 2026-10-19) — mirrors Best Plumber's Reviews tab on
-// Cool Breeze's Google reviews. Source: "Reviews.xlsx" on Azure Blob (first
-// sheet; columns Name / Date (as shown on Google) / Approx. date / Rating /
-// Review comment / Technician), fetched with the shared fetchBlobXLSX().
+// Cool Breeze's Google reviews. Source: Windsor.ai Google My Business connector
+// (JSON: date / review_reviewer / review_comment / review_id / review_star_rating), reshaped by
+// fetchReviewsBlob() into header+rows. Replaced the Azure "Reviews.xlsx" blob on 2026-10-21; dates are
+// now real days (prec 'day'), the relative-wording/approximate-month logic below is kept only as a fallback.
 //
 // What is deliberately different from Best Plumber's tab (no matching data):
 //   • no Business Unit filter, Customer Feedback Channels pie, Number of
@@ -9080,10 +9230,44 @@ async function loadAndInitMemberships(){
 // renderChartPlaceholder from earlier script blocks.
 // ══════════════════════════════════════════════════════════════════════════
 const REVIEWS_CONFIG = {
-  sasUrl: "https://coolbreeze.blob.core.windows.net/coolbreeze/Reviews.xlsx?sp=r&st=2026-10-19T13:45:59Z&se=2030-10-19T22:00:59Z&spr=https&sv=2026-02-06&sr=b&sig=mTFhB%2FvfGOJWdEbUUE0wL7oUuxbGg0Qqn6MUlEbuUkQ%3D"
+  // Windsor.ai Google My Business connector (replaced the Azure Reviews.xlsx blob, 2026-10-21).
+  // date_to is filled in with today's date at fetch time so new reviews keep appearing.
+  windsorBase: "https://connectors.windsor.ai/google_my_business",
+  dateFrom: "2021-10-21",
+  fields: "date,datasource,source,review_reviewer,review_comment,review_id,review_star_rating",
+  apiKey: "e1c7a7a7869f75e14607de4203fcd21b6377"
 };
-const REPORT_KEY_REVIEWS = 'reviewsGoogle';
-async function fetchReviewsBlob(){ return fetchBlobXLSX(REVIEWS_CONFIG.sasUrl); }
+const REPORT_KEY_REVIEWS = 'reviewsWindsor';
+function rvStarsFromAny(v){
+  if(v==null || v==='') return 0;
+  if(typeof v==='number') return v;
+  const s=String(v).trim().toUpperCase();
+  const W={ONE:1,TWO:2,THREE:3,FOUR:4,FIVE:5};
+  const w=s.replace(/[^A-Z]/g,'');
+  for(const k in W){ if(w===k || w===k+'STAR' || w===k+'STARS') return W[k]; }
+  const n=parseFloat(s); return isNaN(n)?0:Math.round(n);
+}
+// Fetches Windsor's JSON and reshapes it into the same array-of-arrays (header row + data rows)
+// that the old xlsx fetch returned, so buildReviewsRows() and the cache keep working unchanged.
+async function fetchReviewsBlob(){
+  const c=REVIEWS_CONFIG;
+  const url=c.windsorBase+'?date_from='+c.dateFrom+'&date_to='+todayISO()+'&fields='+c.fields+'&api_key='+c.apiKey;
+  let resp;
+  try{ resp=await fetch(url,{cache:'no-store'}); }
+  catch(netErr){ throw new Error('Network error reaching Windsor.ai: '+netErr.message+' (could be CORS, an ad-blocker, or no connection)'); }
+  if(!resp.ok) throw new Error('HTTP '+resp.status+' from Windsor.ai');
+  let json; try{ json=await resp.json(); }catch(e){ throw new Error('Windsor.ai did not return valid JSON'); }
+  const list=Array.isArray(json) ? json : (json && Array.isArray(json.data) ? json.data : null);
+  if(!list) throw new Error('Unexpected Windsor.ai response'+(json&&json.error?': '+(json.error.message||JSON.stringify(json.error)):''));
+  const seen=new Set(), out=[['Name','Date','Rating','Review comment','Review ID']];
+  list.forEach(r=>{
+    if(!r) return;
+    const id=r.review_id==null?'':String(r.review_id);
+    if(id){ if(seen.has(id)) return; seen.add(id); }       // same review can come back once per account/location
+    out.push([r.review_reviewer||'', r.date||'', rvStarsFromAny(r.review_star_rating), r.review_comment||'', id]);
+  });
+  return out;
+}
 
 const RV_MON_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const RV_MON_IDX = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,sept:8,oct:9,nov:10,dec:11,
@@ -9161,7 +9345,7 @@ function buildReviewsRows(raw){
   const txt=v=> v==null ? '' : String(v).replace(/\s+/g,' ').trim();
   raw.slice(1).forEach((r,i)=>{
     const name=txt(cell(r,'name')), review=txt(cell(r,'review'));
-    const stars=parseInt(String(cell(r,'stars')==null?'':cell(r,'stars')),10)||0;
+    const stars=rvStarsFromAny(cell(r,'stars'));
     if(!name && !review && !stars) return;                 // fully blank row
     if(stars<1 || stars>5){ skipped++; return; }           // a review needs a 1-5 star rating
     const dt=rvResolveDate(cell(r,'date'), cell(r,'approx'), cell(r,'gdate'));
@@ -9324,7 +9508,7 @@ function rvRenderTechTable(rows){
   const anyTech=RV_ALL.some(r=>r.techs.length);
   body.innerHTML = list.length
     ? list.map(t=>'<tr><td>'+esc(t.name)+'</td><td>'+t.mentions.toLocaleString()+'</td><td>'+t.avgStars.toFixed(1)+'</td></tr>').join('')
-    : '<tr><td colspan="3" style="text-align:center;color:var(--gray-500);padding:20px">'+(anyTech?'No technician mentions in the current range':'No technician names yet — the Technician column in Reviews.xlsx is empty. Fill it in (comma-separated for several) and this table populates.')+'</td></tr>';
+    : '<tr><td colspan="3" style="text-align:center;color:var(--gray-500);padding:20px">'+(anyTech?'No technician mentions in the current range':'Technician mentions are not available from the Windsor.ai Google My Business feed (it has no technician field).')+'</td></tr>';
   [['name','rvtechth-name'],['mentions','rvtechth-mentions'],['avgStars','rvtechth-avgStars']].forEach(p=>{
     const th=document.getElementById(p[1]); if(!th) return;
     th.classList.remove('sort-asc','sort-desc');
@@ -9575,7 +9759,7 @@ async function loadAndInitReviews(force){
     rvStatus='OK';
     rvIngest(rows);
   }catch(e){
-    console.warn('[Reviews tab] Reviews.xlsx fetch failed:',e);
+    console.warn('[Reviews tab] Windsor.ai fetch failed:',e);
     rvStatus='Failed: '+e.message;
     if(!rvInited) rvInitPage(); else rvApplyFilters();
   }
@@ -9589,6 +9773,463 @@ clearAllCache=function(){
 };
 
 document.addEventListener('DOMContentLoaded', ()=>loadAndInitReviews(false));
+</script>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════
+// CUSTOMER OVERVIEW TAB (db8, added 2026-10-20) — mirrors Best Plumber's
+// Marketing ▸ Customer Overview page on Cool Breeze's ServiceTitan Customer
+// List. Source: "Customer List.xlsx" on Azure Blob (first sheet "Sheet1"),
+// fetched with the shared fetchBlobXLSX(). One row per customer, whole
+// database (no date filter).
+//
+// Columns the CURRENT export carries: Customer ID, Customer Name, entity
+// (= Type), Last Job Completed, Completed Jobs, Street Address. Best
+// Plumber's version also reads City, Zip Code, Customers Lifetime Revenue,
+// Member Status, Original Campaign, First Job Completed, Phone, Email.
+// Per the project convention (never fake/estimate a metric the data can't
+// support), anything whose column is missing is shown as "—" with a tooltip
+// instead of being guessed (e.g. no zip parsed out of Street Address, no
+// "paying" proxy from job counts). The parser matches columns by header
+// name, so adding those columns to the ServiceTitan export lights the
+// KPIs/charts/tables up with no code change.
+//
+// Notes on the data:
+//   • "Completed Jobs" is the count for the export's own date range (the
+//     Filters sheet says 01/01/26 – 10/20/26), so it is labelled Jobs
+//     Completed and explained in the tooltip rather than called lifetime.
+//   • Last Job Completed carries ServiceTitan's placeholder dates
+//     (1999-12-31 / 2000-01-01) for customers with no completed job —
+//     years before 2001 are treated as blank.
+//   • Blank Type is bucketed as "Unknown" (not dropped) so the true
+//     denominator stays visible.
+//
+// Own top-level <script> block, `cdb`-prefixed globals. Reuses getCached/
+// setCache/fetchBlobXLSX/sf/esc/toggleMS/exportJobsXLSX/todayISO/PAGE_SIZE/
+// renderChartPlaceholder/clearAllCache from earlier script blocks.
+// ══════════════════════════════════════════════════════════════════════════
+const CDB_CONFIG = {
+  sasUrl: "https://coolbreeze.blob.core.windows.net/coolbreeze/Customer%20List.xlsx?sp=r&st=2026-10-20T15:07:59Z&se=2030-10-20T23:22:59Z&spr=https&sv=2026-02-06&sr=b&sig=svcz3Ud1Ngir9aNnDq4F3SPSSyJZO9t8rH6XDo79bwo%3D"
+};
+const REPORT_KEY_CUSTOMERS = 'customerList';
+async function fetchCustomerListBlob(){ return fetchBlobXLSX(CDB_CONFIG.sasUrl); }
+
+const CDB_MIN_PAYING_FOR_AVG_TICKET_CHART = 5;
+const CDB_ALIASES = {
+  id:           ['customer id','id'],
+  name:         ['customer name','name'],
+  phone:        ['phone number','phone'],
+  email:        ['email','email address'],
+  type:         ['type','entity','customer type'],
+  campaign:     ['original campaign','campaign'],
+  address:      ['street address','address'],
+  city:         ['city'],
+  zip:          ['zip code','zip','postal code'],
+  firstJob:     ['first job completed'],
+  lastJob:      ['last job completed'],
+  ltv:          ['customers lifetime revenue','lifetime revenue'],
+  jobs:         ['lifetime jobs completed','completed jobs'],
+  memberStatus: ['member status'],
+};
+function cdbNorm(h){ return String(h==null?'':h).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+function cdbTxt(v){ return v==null ? '' : String(v).replace(/\s+/g,' ').trim(); }
+function cdbCleanCity(v){ const s=cdbTxt(v); return (!s || s==='.') ? '' : s; }
+function cdbCleanZip(v){
+  const s=cdbTxt(v); if(!s || s==='.') return '';
+  const m=s.match(/\d{5}/); if(!m) return '';
+  return m[0]==='00000' ? '' : m[0];
+}
+// Date / ISO text / m/d/yyyy / Excel serial -> 'YYYY-MM-DD'; ServiceTitan's 1999/2000 placeholder -> ''.
+function cdbDate(v){
+  if(v==null || v==='') return '';
+  let iso='';
+  if(Object.prototype.toString.call(v)==='[object Date]'){ if(isNaN(v)) return ''; iso=new Date(v.getTime()+12*3600e3).toISOString().slice(0,10); }
+  else if(typeof v==='number'){ if(v>20000 && v<80000) iso=new Date(Math.round((v-25569)*86400e3)+12*3600e3).toISOString().slice(0,10); }
+  else {
+    const s=String(v).trim(); let m;
+    if((m=s.match(/^(\d{4})-(\d{2})-(\d{2})/))) iso=m[1]+'-'+m[2]+'-'+m[3];
+    else if((m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) iso=m[3]+'-'+String(+m[1]).padStart(2,'0')+'-'+String(+m[2]).padStart(2,'0');
+  }
+  return (iso && +iso.slice(0,4)>=2001) ? iso : '';
+}
+function cdbFmtDate(iso){
+  if(!iso) return '—';
+  const M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return M[+iso.slice(5,7)-1]+' '+(+iso.slice(8,10))+', '+iso.slice(0,4);
+}
+function cdbMoney(v){ return (v==null||isNaN(v)) ? '—' : Math.round(v).toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}); }
+
+function cdbBuildRows(raw){
+  const has={}; Object.keys(CDB_ALIASES).forEach(k=>has[k]=false);
+  if(!raw || raw.length<2) return {rows:[], has};
+  const norm=raw[0].map(cdbNorm), ix={};
+  Object.keys(CDB_ALIASES).forEach(k=>{
+    ix[k]=-1;
+    for(const a of CDB_ALIASES[k]){ const i=norm.indexOf(a); if(i>=0){ ix[k]=i; break; } }
+    has[k]=ix[k]>=0;
+  });
+  const cell=(r,k)=> ix[k]>=0 ? r[ix[k]] : null;
+  const rows=[];
+  for(const r of raw.slice(1)){
+    const id=cdbTxt(cell(r,'id'));
+    if(!id) continue;
+    rows.push({
+      id, name:cdbTxt(cell(r,'name')), phone:cdbTxt(cell(r,'phone')), email:cdbTxt(cell(r,'email')),
+      type:cdbTxt(cell(r,'type')), campaign:cdbTxt(cell(r,'campaign')), address:cdbTxt(cell(r,'address')),
+      city:cdbCleanCity(cell(r,'city')), zip:cdbCleanZip(cell(r,'zip')),
+      firstJob:cdbDate(cell(r,'firstJob')), lastJob:cdbDate(cell(r,'lastJob')),
+      ltv:sf(cell(r,'ltv')), jobs:sf(cell(r,'jobs')),
+      memberStatus:cdbTxt(cell(r,'memberStatus')),
+    });
+  }
+  return {rows, has};
+}
+
+// ── state ──
+let CDB_ALL=[], cdbHas={}, cdbDataReady=false, cdbInited=false, cdbStatus='Loading…';
+const CDB_SEL={type:new Set(), city:new Set(), zip:new Set()};
+const CDB_OPTS={type:[], city:[], zip:[]};
+const CDB_LABEL={type:'All Types', city:'All Cities', zip:'All Zip Codes'};
+const CDB_CAP={type:'Type', city:'City', zip:'Zip'};   // -> element ids cdbTypeBtn / cdbCityItems / …
+let cdbZipSortKey='revenue', cdbZipSortDir=-1;
+let cdbCitySortKey='revenue', cdbCitySortDir=-1;
+let cdbDirSortKey='name', cdbDirSortDir=1, cdbDirPage=1, cdbDirSearchQuery='', cdbDirSearchTimer=null;
+const CDB_CHARTS={};
+const CDB_PALETTE=['#1B4F91','#2E8B57','#D9A441','#E8974A','#6A3FA0','#4FC3E8','#B23225','#8F0D06','#2E9BD6','#E91E8C'];
+const CDB_NO_DATA_MSG='Awaiting data source — add City, Zip Code and Customers Lifetime Revenue columns to the Customer List export';
+
+function cdbSetText(id,v){ const el=document.getElementById(id); if(el) el.textContent=v; }
+
+// ── filters ──
+function cdbSearchMatch(c,q){
+  if(!q) return true;
+  return (c.id+' '+c.name+' '+c.address+' '+c.city+' '+c.zip+' '+c.phone+' '+c.email).toLowerCase().includes(q);
+}
+function cdbFiltered(){
+  const payEl=document.getElementById('cdbPayingOnly'), payingOnly=!!(payEl && payEl.checked && cdbHas.ltv);
+  const sEl=document.getElementById('cdbSearch'), q=(sEl?sEl.value:'').trim().toLowerCase();
+  return CDB_ALL.filter(c=>{
+    if(payingOnly && !(c.ltv>0)) return false;
+    if(CDB_SEL.type.size && !CDB_SEL.type.has(c.type||'Unknown')) return false;
+    if(CDB_SEL.city.size && !CDB_SEL.city.has(c.city||'Unknown')) return false;
+    if(CDB_SEL.zip.size && !CDB_SEL.zip.has(c.zip||'Unknown')) return false;
+    return cdbSearchMatch(c,q);
+  });
+}
+function cdbBuildOptions(){
+  CDB_OPTS.type=[...new Set(CDB_ALL.map(c=>c.type||'Unknown'))].sort();
+  CDB_OPTS.city=[...new Set(CDB_ALL.map(c=>c.city||'Unknown'))].sort();
+  CDB_OPTS.zip=[...new Set(CDB_ALL.map(c=>c.zip||'Unknown'))].sort();
+  ['type','city','zip'].forEach(k=>{ // drop selections that no longer exist after a refresh
+    [...CDB_SEL[k]].forEach(v=>{ if(!CDB_OPTS[k].includes(v)) CDB_SEL[k].delete(v); });
+    cdbRenderMS(k); cdbUpdateMSBtn(k);
+  });
+}
+function cdbRenderMS(key,filterText){
+  const box=document.getElementById('cdb'+CDB_CAP[key]+'Items'); if(!box) return;
+  const ft=(filterText||'').toLowerCase();
+  const opts=CDB_OPTS[key].filter(o=>!ft||o.toLowerCase().includes(ft));
+  box.innerHTML=opts.length ? opts.map(o=>'<label class="ms-item"><input type="checkbox" '+(CDB_SEL[key].has(o)?'checked':'')+' onchange="cdbToggleMS(\''+key+'\',decodeURIComponent(\''+encodeURIComponent(o)+'\'),this.checked)"><span>'+esc(o)+'</span></label>').join('') : '<div class="ms-empty">No matches</div>';
+}
+function cdbUpdateMSBtn(key){
+  const btn=document.getElementById('cdb'+CDB_CAP[key]+'Btn'); if(!btn) return;
+  const n=CDB_SEL[key].size;
+  btn.textContent = n>0 ? n+' selected ▾' : CDB_LABEL[key]+' ▾';
+  btn.classList.toggle('has-sel', n>0);
+}
+function cdbToggleMS(key,val,checked){ checked?CDB_SEL[key].add(val):CDB_SEL[key].delete(val); cdbUpdateMSBtn(key); cdbApplyFilters(); }
+function cdbSelectAllMS(key){ CDB_OPTS[key].forEach(o=>CDB_SEL[key].add(o)); cdbRenderMS(key); cdbUpdateMSBtn(key); cdbApplyFilters(); }
+function cdbClearMS(key){ CDB_SEL[key].clear(); cdbRenderMS(key); cdbUpdateMSBtn(key); cdbApplyFilters(); }
+function cdbResetFilters(){
+  const s=document.getElementById('cdbSearch'); if(s) s.value='';
+  const p=document.getElementById('cdbPayingOnly'); if(p) p.checked=false;
+  ['type','city','zip'].forEach(k=>{ CDB_SEL[k].clear(); cdbRenderMS(k); cdbUpdateMSBtn(k); });
+  const d=document.getElementById('cdbDirSearch'); if(d) d.value='';
+  cdbDirSearchQuery='';
+  cdbApplyFilters();
+}
+function cdbApplyFilters(){ cdbDirPage=1; cdbRenderAll(); }
+
+// ── rollups ──
+function cdbSorted(rows,key,dir){
+  return rows.slice().sort((a,b)=>{
+    let va=a[key], vb=b[key];
+    if(va==null) va = typeof vb==='number' ? -1 : '';
+    if(vb==null) vb = typeof va==='number' ? -1 : '';
+    if(typeof va==='number' && typeof vb==='number') return (va-vb)*dir;
+    return String(va).localeCompare(String(vb))*dir;
+  });
+}
+function cdbZipRows(){
+  const map=new Map();
+  cdbFiltered().forEach(c=>{
+    const zip=c.zip||'Unknown';
+    if(!map.has(zip)) map.set(zip,{zip,customers:0,paying:0,revenue:0,cityCounts:new Map()});
+    const b=map.get(zip);
+    b.customers++; if(c.ltv>0) b.paying++; b.revenue+=c.ltv||0;
+    const city=c.city||(zip==='Unknown'?'Unknown':'');
+    if(city) b.cityCounts.set(city,(b.cityCounts.get(city)||0)+1);
+  });
+  return [...map.values()].map(b=>{
+    let city='', best=0; b.cityCounts.forEach((n,c)=>{ if(n>best){ best=n; city=c; } });
+    return {zip:b.zip, city, customers:b.customers, paying:b.paying, revenue:b.revenue,
+      avgTicketAll:b.customers>0?b.revenue/b.customers:0, avgTicketPaying:b.paying>0?b.revenue/b.paying:null};
+  });
+}
+function cdbCityRows(){
+  const map=new Map();
+  cdbFiltered().forEach(c=>{
+    const city=c.city||'Unknown';
+    if(!map.has(city)) map.set(city,{city,customers:0,paying:0,revenue:0});
+    const b=map.get(city);
+    b.customers++; if(c.ltv>0) b.paying++; b.revenue+=c.ltv||0;
+  });
+  return [...map.values()].map(b=>({city:b.city, customers:b.customers, paying:b.paying, revenue:b.revenue,
+    avgTicketAll:b.customers>0?b.revenue/b.customers:0, avgTicketPaying:b.paying>0?b.revenue/b.paying:null}));
+}
+
+// ── KPIs ──
+function cdbRenderKPIs(){
+  const rows=cdbFiltered(), total=rows.length;
+  cdbSetText('cdb-total', total.toLocaleString());
+  const NA='—';
+  if(cdbHas.ltv){
+    const paying=rows.filter(c=>c.ltv>0).length, revenue=rows.reduce((s,c)=>s+(c.ltv||0),0);
+    cdbSetText('cdb-paying', paying.toLocaleString());
+    cdbSetText('cdb-paying-pct', total>0 ? Math.round(paying/total*100)+'% of total' : '');
+    cdbSetText('cdb-avgticket', paying>0 ? cdbMoney(revenue/paying) : NA);
+    cdbSetText('cdb-avgticket-sub','');
+  } else {
+    cdbSetText('cdb-paying',NA); cdbSetText('cdb-paying-pct','Awaiting data source');
+    cdbSetText('cdb-avgticket',NA); cdbSetText('cdb-avgticket-sub','Awaiting data source');
+  }
+  if(cdbHas.memberStatus){
+    const am=rows.filter(c=>c.memberStatus.toLowerCase()==='active').length;
+    cdbSetText('cdb-activemembers', am.toLocaleString());
+    cdbSetText('cdb-activemembers-pct', total>0 ? Math.round(am/total*100)+'% of total' : '');
+  } else { cdbSetText('cdb-activemembers',NA); cdbSetText('cdb-activemembers-pct','Awaiting data source'); }
+  if(cdbHas.city || cdbHas.zip){
+    const cities=new Set(rows.map(c=>c.city).filter(Boolean)).size, zips=new Set(rows.map(c=>c.zip).filter(Boolean)).size;
+    const parts=[]; if(cdbHas.city) parts.push(cities.toLocaleString()+' cities'); if(cdbHas.zip) parts.push(zips.toLocaleString()+' zips');
+    cdbSetText('cdb-footprint', parts.join(' / ')); cdbSetText('cdb-footprint-sub','');
+  } else { cdbSetText('cdb-footprint',NA); cdbSetText('cdb-footprint-sub','Awaiting data source'); }
+}
+
+// ── charts ──
+function cdbDestroy(k){ if(CDB_CHARTS[k]){ CDB_CHARTS[k].destroy(); delete CDB_CHARTS[k]; } }
+function cdbShowCanvas(ctx){ ctx.style.display=''; const w=ctx.parentElement; if(w){ const ph=w.querySelector('.mkt-placeholder'); if(ph) ph.remove(); } }
+function cdbBarChart(key,canvasId,rows,labelFn,valFn,color,label,fmt,noDataMsg){
+  cdbDestroy(key);
+  const ctx=document.getElementById(canvasId); if(!ctx) return;
+  if(!rows.length){ renderChartPlaceholder(canvasId,noDataMsg); return; }
+  cdbShowCanvas(ctx);
+  CDB_CHARTS[key]=new Chart(ctx,{type:'bar',
+    data:{labels:rows.map(labelFn),datasets:[{label,data:rows.map(valFn),backgroundColor:color,borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmt?fmt(c.raw):c.raw.toLocaleString()}}},
+      scales:{x:{beginAtZero:true,ticks:{callback:v=>fmt?fmt(v):v.toLocaleString(),precision:0}}}}});
+}
+function cdbRenderCharts(){
+  const hasGeoRev=cdbHas.zip && cdbHas.ltv;
+  const zr=cdbZipRows().filter(r=>r.zip!=='Unknown');
+  cdbBarChart('zipRev','cdbZipRevenueChart', hasGeoRev ? zr.slice().sort((a,b)=>b.revenue-a.revenue).slice(0,15) : [],
+    r=>r.zip, r=>r.revenue, '#1B4F91','Total Lifetime Revenue', cdbMoney, hasGeoRev ? 'No zip code data yet' : CDB_NO_DATA_MSG);
+  const ta=hasGeoRev ? zr.filter(r=>r.paying>=CDB_MIN_PAYING_FOR_AVG_TICKET_CHART && r.avgTicketPaying!=null).sort((a,b)=>b.avgTicketPaying-a.avgTicketPaying).slice(0,15) : [];
+  cdbBarChart('zipAvg','cdbZipAvgTicketChart', ta, r=>r.zip, r=>r.avgTicketPaying, '#2E8B57','Avg Ticket (Paying)', cdbMoney,
+    hasGeoRev ? 'No zip code has '+CDB_MIN_PAYING_FOR_AVG_TICKET_CHART+'+ paying customers yet' : CDB_NO_DATA_MSG);
+  const cr=cdbHas.city ? cdbCityRows().filter(r=>r.city!=='Unknown').sort((a,b)=>b.customers-a.customers).slice(0,15) : [];
+  cdbBarChart('cityCnt','cdbCityCountChart', cr, r=>r.city, r=>r.customers, '#D9A441','Customers', null,
+    cdbHas.city ? 'No city data yet' : 'Awaiting data source — add a City column to the Customer List export');
+  // Type doughnut
+  cdbDestroy('type');
+  const ctx=document.getElementById('cdbTypePieChart');
+  if(ctx){
+    const rows=cdbFiltered();
+    if(!rows.length){ renderChartPlaceholder('cdbTypePieChart','No customer data yet'); }
+    else {
+      cdbShowCanvas(ctx);
+      const map=new Map(); rows.forEach(c=>{ const t=c.type||'Unknown'; map.set(t,(map.get(t)||0)+1); });
+      const ents=[...map.entries()].sort((a,b)=>b[1]-a[1]);
+      CDB_CHARTS.type=new Chart(ctx,{type:'doughnut',
+        data:{labels:ents.map(e=>e[0]),datasets:[{data:ents.map(e=>e[1]),backgroundColor:ents.map((e,i)=>CDB_PALETTE[i%CDB_PALETTE.length])}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right'},
+          tooltip:{callbacks:{label:c=>c.label+': '+c.raw.toLocaleString()+' ('+(c.raw/rows.length*100).toFixed(1)+'%)'}}}}});
+    }
+  }
+}
+
+// ── zip / city tables ──
+function cdbMarkSort(map,activeKey,dir){
+  Object.values(map).forEach(id=>{ const th=document.getElementById(id); if(th) th.classList.remove('sort-asc','sort-desc'); });
+  const a=document.getElementById(map[activeKey]); if(a) a.classList.add(dir===1?'sort-asc':'sort-desc');
+}
+const CDB_ZIP_TH={zip:'cdbZipTh-zip',city:'cdbZipTh-city',customers:'cdbZipTh-customers',paying:'cdbZipTh-paying',revenue:'cdbZipTh-revenue',avgTicketAll:'cdbZipTh-avgTicketAll',avgTicketPaying:'cdbZipTh-avgTicketPaying'};
+const CDB_CITY_TH={city:'cdbCityTh-city',customers:'cdbCityTh-customers',paying:'cdbCityTh-paying',revenue:'cdbCityTh-revenue',avgTicketAll:'cdbCityTh-avgTicketAll',avgTicketPaying:'cdbCityTh-avgTicketPaying'};
+function cdbSortZip(k){ if(cdbZipSortKey===k) cdbZipSortDir*=-1; else { cdbZipSortKey=k; cdbZipSortDir=(k==='zip'||k==='city')?1:-1; } cdbRenderZipTable(); }
+function cdbSortCity(k){ if(cdbCitySortKey===k) cdbCitySortDir*=-1; else { cdbCitySortKey=k; cdbCitySortDir=k==='city'?1:-1; } cdbRenderCityTable(); }
+function cdbGeoFoot(rows,lead){
+  const tc=rows.reduce((s,r)=>s+r.customers,0), tp=rows.reduce((s,r)=>s+r.paying,0), tr=rows.reduce((s,r)=>s+r.revenue,0);
+  return '<tr style="font-weight:700;background:var(--line-2)"><td colspan="'+lead+'">TOTAL</td><td>'+tc.toLocaleString()+'</td><td>'+tp.toLocaleString()+'</td><td>'+cdbMoney(tr)+'</td><td>'+cdbMoney(tc>0?tr/tc:0)+'</td><td>'+(tp>0?cdbMoney(tr/tp):'—')+'</td></tr>';
+}
+function cdbRenderZipTable(){
+  const body=document.getElementById('cdbZipBody'); if(!body) return;
+  const foot=document.getElementById('cdbZipFoot');
+  cdbMarkSort(CDB_ZIP_TH,cdbZipSortKey,cdbZipSortDir);
+  if(!cdbHas.zip){
+    cdbSetText('cdbZip-count','— zip codes');
+    body.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--gray);padding:20px">'+CDB_NO_DATA_MSG+'</td></tr>'; if(foot) foot.innerHTML=''; return;
+  }
+  let rows=cdbZipRows();
+  cdbSetText('cdbZip-count', rows.length.toLocaleString()+' zip code'+(rows.length!==1?'s':''));
+  if(!rows.length){ body.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--gray);padding:20px">No customers match the current filters</td></tr>'; if(foot) foot.innerHTML=''; return; }
+  rows=cdbSorted(rows,cdbZipSortKey,cdbZipSortDir);
+  body.innerHTML=rows.map(r=>'<tr><td>'+esc(r.zip)+'</td><td>'+esc(r.city||'—')+'</td><td>'+r.customers.toLocaleString()+'</td><td>'+(cdbHas.ltv?r.paying.toLocaleString():'—')+'</td><td>'+(cdbHas.ltv?cdbMoney(r.revenue):'—')+'</td><td>'+(cdbHas.ltv?cdbMoney(r.avgTicketAll):'—')+'</td><td>'+(cdbHas.ltv&&r.avgTicketPaying!=null?cdbMoney(r.avgTicketPaying):'—')+'</td></tr>').join('');
+  if(foot) foot.innerHTML=cdbGeoFoot(rows,2);
+}
+function cdbRenderCityTable(){
+  const body=document.getElementById('cdbCityBody'); if(!body) return;
+  const foot=document.getElementById('cdbCityFoot');
+  cdbMarkSort(CDB_CITY_TH,cdbCitySortKey,cdbCitySortDir);
+  if(!cdbHas.city){
+    cdbSetText('cdbCity-count','— cities');
+    body.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--gray);padding:20px">'+CDB_NO_DATA_MSG+'</td></tr>'; if(foot) foot.innerHTML=''; return;
+  }
+  let rows=cdbCityRows();
+  cdbSetText('cdbCity-count', rows.length.toLocaleString()+' cit'+(rows.length!==1?'ies':'y'));
+  if(!rows.length){ body.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--gray);padding:20px">No customers match the current filters</td></tr>'; if(foot) foot.innerHTML=''; return; }
+  rows=cdbSorted(rows,cdbCitySortKey,cdbCitySortDir);
+  body.innerHTML=rows.map(r=>'<tr><td>'+esc(r.city)+'</td><td>'+r.customers.toLocaleString()+'</td><td>'+(cdbHas.ltv?r.paying.toLocaleString():'—')+'</td><td>'+(cdbHas.ltv?cdbMoney(r.revenue):'—')+'</td><td>'+(cdbHas.ltv?cdbMoney(r.avgTicketAll):'—')+'</td><td>'+(cdbHas.ltv&&r.avgTicketPaying!=null?cdbMoney(r.avgTicketPaying):'—')+'</td></tr>').join('');
+  if(foot) foot.innerHTML=cdbGeoFoot(rows,1);
+}
+function cdbExportZip(){
+  const rows=cdbSorted(cdbZipRows(),cdbZipSortKey,cdbZipSortDir);
+  exportJobsXLSX('Coolbreeze_CustomerOverview_RevenueByZip.xlsx',['Zip Code','City','Customers','Paying Customers','Total Lifetime Revenue','Avg Revenue / Customer','Avg Ticket (Paying)'],
+    rows.map(r=>[r.zip,r.city||'',r.customers,r.paying,r.revenue,r.avgTicketAll,r.avgTicketPaying==null?'':r.avgTicketPaying]));
+}
+function cdbExportCity(){
+  const rows=cdbSorted(cdbCityRows(),cdbCitySortKey,cdbCitySortDir);
+  exportJobsXLSX('Coolbreeze_CustomerOverview_RevenueByCity.xlsx',['City','Customers','Paying Customers','Total Lifetime Revenue','Avg Revenue / Customer','Avg Ticket (Paying)'],
+    rows.map(r=>[r.city,r.customers,r.paying,r.revenue,r.avgTicketAll,r.avgTicketPaying==null?'':r.avgTicketPaying]));
+}
+
+// ── directory (columns shown = columns the export carries) ──
+const CDB_DIR_COLS=[
+  {k:'id',          l:'Customer ID',         need:null},
+  {k:'name',        l:'Customer Name',       need:null,        cls:'td-cust'},
+  {k:'address',     l:'Street Address',      need:'address'},
+  {k:'city',        l:'City',                need:'city'},
+  {k:'zip',         l:'Zip Code',            need:'zip'},
+  {k:'type',        l:'Type',                need:'type'},
+  {k:'campaign',    l:'Original Campaign',   need:'campaign'},
+  {k:'firstJob',    l:'First Job Completed', need:'firstJob',  fmt:c=>cdbFmtDate(c.firstJob)},
+  {k:'lastJob',     l:'Last Job Completed',  need:'lastJob',   fmt:c=>cdbFmtDate(c.lastJob)},
+  {k:'jobs',        l:'Jobs Completed',      need:'jobs',      fmt:c=>(c.jobs||0).toLocaleString()},
+  {k:'ltv',         l:'Lifetime Revenue',    need:'ltv',       fmt:c=>cdbMoney(c.ltv)},
+  {k:'memberStatus',l:'Member Status',       need:'memberStatus'},
+];
+function cdbDirCols(){ return CDB_DIR_COLS.filter(c=>!c.need || cdbHas[c.need]); }
+function cdbDefaultDirSort(){
+  if(cdbHas.ltv){ cdbDirSortKey='ltv'; cdbDirSortDir=-1; }
+  else if(cdbHas.lastJob){ cdbDirSortKey='lastJob'; cdbDirSortDir=-1; }
+  else { cdbDirSortKey='name'; cdbDirSortDir=1; }
+}
+function cdbSortDir(k){
+  if(cdbDirSortKey===k) cdbDirSortDir*=-1;
+  else { cdbDirSortKey=k; cdbDirSortDir=['firstJob','lastJob','jobs','ltv'].includes(k)?-1:1; }
+  cdbDirPage=1; cdbRenderDirTable();
+}
+function cdbGoDirPage(p){ cdbDirPage=p; cdbRenderDirTable(); }
+function cdbOnDirSearch(v){
+  clearTimeout(cdbDirSearchTimer);
+  cdbDirSearchTimer=setTimeout(()=>{ cdbDirSearchQuery=String(v||'').trim().toLowerCase(); cdbDirPage=1; cdbRenderDirTable(); },200);
+}
+function cdbDirRows(){
+  let rows=cdbFiltered();
+  if(cdbDirSearchQuery) rows=rows.filter(c=>cdbSearchMatch(c,cdbDirSearchQuery));
+  return rows;
+}
+function cdbRenderDirTable(){
+  const body=document.getElementById('cdbDirBody'), head=document.getElementById('cdbDirHead'); if(!body||!head) return;
+  const cols=cdbDirCols();
+  head.innerHTML=cols.map(c=>'<th onclick="cdbSortDir(\''+c.k+'\')" class="'+(c.k===cdbDirSortKey?(cdbDirSortDir===1?'sort-asc':'sort-desc'):'')+'">'+c.l+'</th>').join('');
+  let rows=cdbDirRows();
+  cdbSetText('cdbDir-count', rows.length.toLocaleString()+' customer'+(rows.length!==1?'s':''));
+  const pg=document.getElementById('cdbDirPagination');
+  if(!rows.length){ body.innerHTML='<tr><td colspan="'+cols.length+'" style="text-align:center;color:var(--gray);padding:20px">No customers match the current filters</td></tr>'; if(pg) pg.innerHTML=''; return; }
+  rows=cdbSorted(rows,cdbDirSortKey,cdbDirSortDir);
+  const pages=Math.max(1,Math.ceil(rows.length/PAGE_SIZE));
+  if(cdbDirPage>pages) cdbDirPage=pages;
+  const start=(cdbDirPage-1)*PAGE_SIZE;
+  body.innerHTML=rows.slice(start,start+PAGE_SIZE).map(c=>'<tr>'+cols.map(col=>'<td'+(col.cls?' class="'+col.cls+'"':'')+'>'+(col.fmt?col.fmt(c):esc(c[col.k]||'—'))+'</td>').join('')+'</tr>').join('');
+  if(pg){
+    if(pages<=1) pg.innerHTML='';
+    else pg.innerHTML='<button class="pg-btn" onclick="cdbGoDirPage('+Math.max(1,cdbDirPage-1)+')" '+(cdbDirPage===1?'disabled':'')+'>‹ Prev</button><span class="pg-info">Page '+cdbDirPage+' of '+pages+'</span><button class="pg-btn" onclick="cdbGoDirPage('+Math.min(pages,cdbDirPage+1)+')" '+(cdbDirPage===pages?'disabled':'')+'>Next ›</button>';
+  }
+}
+function cdbExportDir(){
+  const cols=cdbDirCols(), rows=cdbSorted(cdbDirRows(),cdbDirSortKey,cdbDirSortDir);
+  exportJobsXLSX('Coolbreeze_CustomerOverview_Directory.xlsx', cols.map(c=>c.l),
+    rows.map(r=>cols.map(c=> c.k==='ltv'||c.k==='jobs' ? (r[c.k]||0) : (r[c.k]||''))));
+}
+
+// ── status / render / load ──
+function cdbUpdateFinfo(){
+  const el=document.getElementById('cdb-finfo'); if(!el) return;
+  if(!cdbDataReady){
+    el.textContent = cdbStatus!=='OK' && cdbStatus!=='Loading…' ? '⚠ Customer List failed to load: '+cdbStatus.slice(0,120) : 'Loading customers data…';
+    el.style.color = cdbStatus.startsWith('Failed') ? '#fca5a5' : '';
+    return;
+  }
+  el.textContent = CDB_ALL.length.toLocaleString()+' customers in database (all-time).'+(cdbStatus!=='OK' ? '  ⚠ Last refresh failed: '+cdbStatus.slice(0,80) : '');
+  el.style.color = cdbStatus!=='OK' ? '#fca5a5' : '';
+}
+function cdbRenderAll(){
+  cdbUpdateFinfo();
+  cdbRenderKPIs();
+  cdbRenderCharts();
+  cdbRenderZipTable();
+  cdbRenderCityTable();
+  cdbRenderDirTable();
+}
+function cdbApplyColumnVisibility(){
+  const show=(id,on)=>{ const el=document.getElementById(id); if(el) el.style.display=on?'contents':'none'; };
+  show('cdbFltType',cdbHas.type); show('cdbFltCity',cdbHas.city); show('cdbFltZip',cdbHas.zip); show('cdbFltPaying',cdbHas.ltv);
+}
+function cdbIngest(raw){
+  const b=cdbBuildRows(raw);
+  CDB_ALL=b.rows; cdbHas=b.has; cdbDataReady=true;
+  cdbApplyColumnVisibility();
+  cdbBuildOptions();
+  if(!cdbInited){ cdbInited=true; cdbDefaultDirSort(); }
+  cdbRenderAll();
+}
+// Charts created while the panel was display:none have no size — rebuild them when the tab is shown (called from showDB(8)).
+function cdbOnShow(){ if(cdbInited) cdbRenderCharts(); }
+async function cdbLoad(force){
+  if(!force){
+    const cached=getCached(REPORT_KEY_CUSTOMERS);
+    if(cached){ try{ cdbIngest(cached); }catch(e){ console.warn('[Customer Overview] cached rows unreadable:',e); } }
+  } else { cdbSetText('cdb-finfo','Refreshing…'); }
+  try{
+    const rows=await fetchCustomerListBlob();
+    setCache(REPORT_KEY_CUSTOMERS, rows);
+    cdbStatus='OK';
+    cdbIngest(rows);
+  }catch(e){
+    console.warn('[Customer Overview] Customer List.xlsx fetch failed:',e);
+    cdbStatus='Failed: '+e.message;
+    cdbUpdateFinfo();
+  }
+}
+
+// Hard Refresh (clearAllCache) also clears this tab's cache slot.
+const _origClearAllCacheCdb=clearAllCache;
+clearAllCache=function(){
+  _origClearAllCacheCdb();
+  try{ localStorage.removeItem('cb_'+REPORT_KEY_CUSTOMERS); }catch(e){}
+};
+
+document.addEventListener('DOMContentLoaded', ()=>cdbLoad(false));
 </script>
 
 </body>
