@@ -2264,7 +2264,11 @@ const NO_ST_MATCH_ACCOUNTS=new Set(['supplies (shop)']);
 const PO_CONFIG = {
   // Blob-scoped SAS token (sr=b), valid through 2030-09-12 — same
   // container-account convention as JOBS_CONFIG/ESTIMATES_CONFIG.
-  sasUrl: 'https://coolbreeze.blob.core.windows.net/coolbreeze/Purchase%20Orders%20This%20Year.xlsx?sp=r&st=2026-09-18T14:24:05Z&se=2030-09-18T22:39:05Z&spr=https&sv=2026-02-06&sr=b&sig=YOpQ71y5khzIcT9OmjLTP3y7V%2BouzXpJGxx1JW9XjXo%3D'
+  sasUrl: 'https://coolbreeze.blob.core.windows.net/coolbreeze/Purchase%20Orders%20This%20Year.xlsx?sp=r&st=2026-09-18T14:24:05Z&se=2030-09-18T22:39:05Z&spr=https&sv=2026-02-06&sr=b&sig=YOpQ71y5khzIcT9OmjLTP3y7V%2BouzXpJGxx1JW9XjXo%3D',
+  // Last year's Purchase Order Reconciliation export (same columns), added
+  // 2026-10-22. Merged under the current-year rows by fetchPOMergedBlob()
+  // below; blob-scoped SAS, valid through 2030-10-22.
+  sasUrlPrevYear: 'https://coolbreeze.blob.core.windows.net/coolbreeze/Purchase%20Orders%20Last%20Year.xlsx?sp=r&st=2026-10-22T14:03:01Z&se=2030-10-22T22:18:01Z&spr=https&sv=2026-02-06&sr=b&sig=7WgT%2B3Agmdcl8IapvP91Z3IuyHmCCDvTnGxSq0xKni0%3D'
 };
 
 // QuickBooks Bills report (Bills Reconciliation tab, QuickBooks side) — as
@@ -2565,18 +2569,28 @@ function normalizeRows(rawRows,source){
     // - "Return" transactions carry a positive Total in the ST export;
     //   flip it negative so it nets against Bills correctly, the same
     //   way a vendor credit works on the QuickBooks side.
-    // - Always use "Date Created" for the date, not "Date"/"Date
-    //   Billed" — Date Billed is blank on Returns (they're never
-    //   billed), which would otherwise drop those rows out of the
-    //   month-based matching code.
+    // - Bills use "Date Billed"; Returns use "Date Created" (Date Billed
+    //   is blank on Returns, which would otherwise drop them out of the
+    //   month-based matching code).
     if(isST){
       const txnType=pickField(obj,['transaction type']);
       if(String(txnType||'').trim().toLowerCase()==='return'
          &&amountRaw!==undefined&&amountRaw!==null&&amountRaw!==''){
         amountRaw=-Math.abs(sf(amountRaw));
       }
+      // Bills use Date Billed; Returns use Date Created (Date Billed is blank
+      // on them). If a Bill has no Date Billed, fall back to Date Created.
+      const isReturn=String(txnType||'').trim().toLowerCase()==='return';
       const dateCreatedRaw=pickField(obj,['date created']);
-      if(dateCreatedRaw!==undefined)dateRaw=dateCreatedRaw;
+      const dateBilledRaw=pickField(obj,['date billed']);
+      const blank=v=>v===undefined||v===null||String(v).trim()==='';
+      if(isReturn){
+        if(!blank(dateCreatedRaw))dateRaw=dateCreatedRaw;
+      }else if(!blank(dateBilledRaw)){
+        dateRaw=dateBilledRaw;
+      }else if(!blank(dateCreatedRaw)){
+        dateRaw=dateCreatedRaw;
+      }
     }
 
     if(vendorRaw===undefined)unmapped.add('vendor');
@@ -2781,79 +2795,52 @@ function buildVendorCanon(allBills){
 function sameClass(a,b){ return (a.type==='credit')===(b.type==='credit'); }
 function amtEq(a,b,tol){ return Math.abs(round2(a.amount-b.amount))<=tol; }
 
-// Step 3 — matching. Returns {pairs:[{q,s,basis}], ambiguous:[{qs,ss,reason}], leftoverQ, leftoverS}
+// Step 3 — matching (2026-10-23 rewrite). Strictly ONE-TO-ONE — no bill is ever grouped with
+// several others, so every dollar of difference stays visible on a case.
+//   1. shared integration id        (only when unique on both sides)
+//   2. same vendor + invoice/PO ref (only when unique on both sides)
+//   3. MATCH CODE = vendor + posting month/year + exact amount — must be identical on both sides.
+//      Several bills with the same code are paired in date order; extras surface as missing.
+//   4. same vendor + exact amount, dates within MATCH_DATE_TOLERANCE_DAYS across a month
+//      boundary → paired and flagged Date mismatch.
+// Returns {pairs:[{q,s,basis}], ambiguous:[], leftoverQ, leftoverS}
+function billMatchCode(b){ return b.canon+'|'+monthKey(b.date)+'|'+Math.round(b.amount*100)+'|'+(b.type==='credit'?'c':'b'); }
 function matchBills(qb,st,opts){
-  const tol=opts.tolerance, strict=!!opts.strict;
   const pairs=[], ambiguous=[];
   const usedQ=new Set(), usedS=new Set();
   const free=(arr,used)=>arr.filter(x=>!used.has(x));
-  const pair=(q,s,basis,confident)=>{ usedQ.add(q); usedS.add(s); pairs.push({q,s,basis,confident}); };
-
-  // Resolve one connected component of candidate edges.
-  function resolveComponent(qs,ss,basis,amountRule){
-    if(qs.length===1&&ss.length===1){ pair(qs[0],ss[0],basis,true); return; }
-    // If every candidate on both sides carries the same amount, which pairing is chosen cannot change any number:
-    // pair by date order and let leftovers surface as duplicates/missing.
-    const allSame=[...qs,...ss].every(x=>Math.abs(x.amount-qs[0].amount)<=tol);
-    if(allSame){
-      const byDate=(a,b)=>(a.date?a.date.getTime():0)-(b.date?b.date.getTime():0);
-      const Q=[...qs].sort(byDate), S=[...ss].sort(byDate), n=Math.min(Q.length,S.length);
-      for(let i=0;i<n;i++)pair(Q[i],S[i],basis,true);
-      return;
-    }
-    ambiguous.push({qs,ss,reason:'Several candidate bills with different amounts share the same '+(basis==='amount+date'?'vendor/date window':'reference')});
-    qs.forEach(x=>usedQ.add(x)); ss.forEach(x=>usedS.add(x));
-  }
-  function components(edgesOfQ,Q,S){
-    // union-find over bills linked by candidate edges
-    const parent=new Map(); const find=x=>{ while(parent.get(x)!==x){ parent.set(x,parent.get(parent.get(x))); x=parent.get(x);} return x; };
-    [...Q,...S].forEach(x=>parent.set(x,x));
-    Q.forEach(q=>(edgesOfQ.get(q)||[]).forEach(s=>{ const a=find(q),b=find(s); if(a!==b)parent.set(a,b); }));
-    const comps=new Map();
-    [...Q,...S].forEach(x=>{ const r=find(x); if(!comps.has(r))comps.set(r,{qs:[],ss:[]}); (x.src==='QuickBooks'?comps.get(r).qs:comps.get(r).ss).push(x); });
-    return [...comps.values()].filter(c=>c.qs.length&&c.ss.length);
-  }
-
-  // Stage 1 — shared integration ids (only when the exports actually carry them).
-  {
-    const edges=new Map();
-    qb.forEach(q=>{
-      const c=st.filter(s=>sameClass(q,s)&&((s.extIds.length&&q.id&&s.extIds.includes(q.id))||(q.extIds.length&&s.id&&q.extIds.includes(s.id))));
-      if(c.length)edges.set(q,c);
-    });
-    components(edges,qb,st).forEach(c=>resolveComponent(c.qs,c.ss,'id'));
-  }
-  // Stage 2 — same vendor + same reference (invoice / PO / ST transaction base).
-  {
-    const Q=free(qb,usedQ), S=free(st,usedS), edges=new Map();
-    Q.forEach(q=>{
-      const qk=[...q.refKeys,q.poKey].filter(Boolean); if(!qk.length)return;
-      const c=S.filter(s=>s.canon===q.canon&&sameClass(q,s)&&[...s.refKeys,s.poKey].filter(Boolean).some(k=>qk.includes(k)));
-      if(c.length)edges.set(q,c);
-    });
-    components(edges,Q,S).forEach(c=>resolveComponent(c.qs,c.ss,'invoice'));
-  }
-  // Stage 3 — supporting evidence only: same vendor + amount + date window. Exact-amount candidates first.
-  const stage3=(amountOk,basis)=>{
-    const Q=free(qb,usedQ), S=free(st,usedS), edges=new Map();
-    Q.forEach(q=>{
-      const c=S.filter(s=>{
-        if(s.canon!==q.canon||!sameClass(q,s)||!amountOk(q,s))return false;
-        if(sameMonth(q.date,s.date))return true;
-        const dd=daysBetween(q.date,s.date);
-        return dd!==null&&dd<=MATCH_DATE_TOLERANCE_DAYS;
-      });
-      if(c.length)edges.set(q,c);
-    });
-    components(edges,Q,S).forEach(c=>{
-      if(strict){
-        ambiguous.push({qs:c.qs,ss:c.ss,reason:'Matched only on vendor + amount + date (strict mode requires an invoice/ID match)',candidate:true});
-        c.qs.forEach(x=>usedQ.add(x)); c.ss.forEach(x=>usedS.add(x));
-      }else resolveComponent(c.qs,c.ss,basis);
-    });
+  const pair=(q,s,basis)=>{ usedQ.add(q); usedS.add(s); pairs.push({q,s,basis,confident:basis==='id'||basis==='invoice'}); };
+  const byDate=(a,b)=>(a.date?a.date.getTime():0)-(b.date?b.date.getTime():0);
+  // Pair only when q has exactly one candidate s AND that s has exactly one candidate q.
+  const uniquePairs=(test,basis)=>{
+    const Q=free(qb,usedQ), S=free(st,usedS), cq=new Map(), cs=new Map();
+    Q.forEach(q=>{ const c=S.filter(s=>test(q,s)); cq.set(q,c); c.forEach(s=>cs.set(s,(cs.get(s)||0)+1)); });
+    Q.forEach(q=>{ const c=cq.get(q); if(c.length===1&&cs.get(c[0])===1)pair(q,c[0],basis); });
   };
-  stage3((q,s)=>amtEq(q,s,tol),'amount+date');
-  stage3((q,s)=>Math.abs(q.amount-s.amount)<=Math.max(tol,Math.abs(s.amount)*APPROX_AMOUNT_PCT+0.01),'approx amount+date');
+  // 1. shared integration ids
+  uniquePairs((q,s)=>sameClass(q,s)&&((s.extIds.length&&q.id&&s.extIds.includes(q.id))||(q.extIds.length&&s.id&&q.extIds.includes(s.id))),'id');
+  // 2. same vendor + reference
+  uniquePairs((q,s)=>{
+    if(s.canon!==q.canon||!sameClass(q,s))return false;
+    const qk=[...q.refKeys,q.poKey].filter(Boolean); if(!qk.length)return false;
+    return [...s.refKeys,s.poKey].filter(Boolean).some(k=>qk.includes(k));
+  },'invoice');
+  // 3. match code (vendor + month/year + amount)
+  {
+    const buckets=new Map();
+    const put=(b,side)=>{ if(!b.date)return; const k=billMatchCode(b); if(!buckets.has(k))buckets.set(k,{q:[],s:[]}); buckets.get(k)[side].push(b); };
+    free(qb,usedQ).forEach(b=>put(b,'q')); free(st,usedS).forEach(b=>put(b,'s'));
+    buckets.forEach(g=>{ const Q=g.q.sort(byDate), S=g.s.sort(byDate); for(let i=0;i<Math.min(Q.length,S.length);i++)pair(Q[i],S[i],'code'); });
+  }
+  // 4. same vendor + exact amount across a month boundary (≤ MATCH_DATE_TOLERANCE_DAYS) → Date mismatch
+  {
+    const cand=[];
+    free(qb,usedQ).forEach(q=>free(st,usedS).forEach(s=>{
+      if(s.canon!==q.canon||!sameClass(q,s)||Math.round(q.amount*100)!==Math.round(s.amount*100))return;
+      const dd=daysBetween(q.date,s.date); if(dd!==null&&dd<=MATCH_DATE_TOLERANCE_DAYS)cand.push({q,s,dd});
+    }));
+    cand.sort((a,b)=>a.dd-b.dd).forEach(c=>{ if(!usedQ.has(c.q)&&!usedS.has(c.s))pair(c.q,c.s,'code-adjacent'); });
+  }
   return {pairs,ambiguous,leftoverQ:free(qb,usedQ),leftoverS:free(st,usedS)};
 }
 
@@ -2905,7 +2892,7 @@ function buildCase(qs,ss,o){
     qbBills:qs, stBills:ss, qbCount:qs.length, stCount:ss.length,
     qbAmount, stAmount, qbDate:dQ, stDate:dS, diff, absDiff:Math.abs(diff),
     flags:flagList, primary, needsReview, reconciled, ambiguous, stNotRequired, group, groupRawDiff:rawDiff,
-    basis:o.basis||(ambiguous?'ambiguous':(paired?'':'unmatched')), confident:paired&&o.basis!=='amount+date'&&o.basis!=='approx amount+date',
+    basis:o.basis||(ambiguous?'ambiguous':(paired?'':'unmatched')), confident:paired&&(o.basis==='id'||o.basis==='invoice'),
     reason:o.reason||'', candidate:!!o.candidate,
     // legacy fields still read by filter widgets / exports
     status:ambiguous?'mismatch':(!qs.length?'st_only':(!ss.length?'qb_only':(flags.has('amount_mismatch')?'mismatch':'matched'))),
@@ -3665,7 +3652,7 @@ function causesFor(c){
 function renderDetail(c){
   const rows=fieldRows(c);
   const cell=(v)=>v===''||v==null?'<span class="rc-muted">—</span>':esc(v);
-  let h=`<div class="rc-d-top"><div><b>How these records were paired:</b> ${c.ambiguous?'<span class="rc-miss">not paired — ambiguous</span>':(!c.qbCount||!c.stCount?'no counterpart found':({id:'shared integration ID',invoice:'same vendor + invoice/PO reference','amount+date':'vendor + exact amount + same posting month (supporting evidence only — no shared ID or invoice number)','approx amount+date':'vendor + near amount + same posting month (supporting evidence only)'}[c.basis]||c.basis))}.</div></div>`;
+  let h=`<div class="rc-d-top"><div><b>How these records were paired:</b> ${c.ambiguous?'<span class="rc-miss">not paired — ambiguous</span>':(!c.qbCount||!c.stCount?'no counterpart found':({id:'shared integration ID',invoice:'same vendor + invoice/PO reference','amount+date':'vendor + exact amount + same posting month (supporting evidence only — no shared ID or invoice number)','approx amount+date':'vendor + near amount + same posting month (supporting evidence only)',code:'match code — same vendor + posting month/year + exact amount','code-adjacent':'same vendor + exact amount, dates within '+MATCH_DATE_TOLERANCE_DAYS+' days across a month boundary'}[c.basis]||c.basis))}.</div></div>`;
   if(c.ambiguous){
     h+=`<div class="rc-amb"><b>${c.candidate?'Candidate pair needing identity confirmation':'Candidate bills'}</b> — ${esc(c.reason)}<table class="rc-cmp"><tr><th>System</th><th>Invoice</th><th>Date</th><th>Amount</th><th>ID</th></tr>${[...c.qbBills.map(b=>['QuickBooks',b]),...c.stBills.map(b=>['ServiceTitan',b])].map(([n,b])=>`<tr><td>${n}</td><td>${esc(b.invoiceNo)}</td><td>${fmtDate(b.date)}</td><td>${fmtFull(b.amount)}</td><td>${esc(b.id)}</td></tr>`).join('')}</table></div>`;
   }else{
@@ -5065,7 +5052,37 @@ async function fetchBlobXLSX(url){
 // Estimates, just called from loadAndInit() in the first script block
 // instead of its own DOMContentLoaded hook, since Vendor Invoice Coverage
 // already lives inside the main Bills-tab load/render cycle.
-async function fetchVendorTxnsBlob(){return fetchBlobXLSX(PO_CONFIG.sasUrl);}
+// Current-year PO export + last year's, as one array-of-arrays (header row
+// once). Last-year fetch is non-fatal (null on failure => current year only).
+// Cross-file dedup on Transaction Number|Type|Vendor, current year wins, so a
+// transaction that appears in both exports is never double counted.
+async function fetchPOMergedBlob(){
+  const cur=await fetchBlobXLSX(PO_CONFIG.sasUrl);
+  if(!PO_CONFIG.sasUrlPrevYear)return cur;
+  let prev=null;
+  try{ prev=await fetchBlobXLSX(PO_CONFIG.sasUrlPrevYear); }catch(e){ console.warn('[PO prev year]',e.message); return cur; }
+  return mergePOExports(cur,prev);
+}
+function mergePOExports(cur,prev){
+  if(!prev||prev.length<2)return cur;
+  if(!cur||!cur.length)return prev;
+  const hdr=r=>(r||[]).map(c=>String(c==null?'':c).trim().toLowerCase());
+  const ch=hdr(cur[0]), ph=hdr(prev[0]);
+  const ix=(h,n)=>h.indexOf(n);
+  const keyOf=(r,h)=>[ix(h,'transaction number'),ix(h,'transaction type'),ix(h,'vendor name')].map(i=>i<0?'':String(r[i]==null?'':r[i]).trim().toLowerCase()).join('|');
+  const seen=new Set(cur.slice(1).map(r=>keyOf(r,ch)));
+  // remap prev columns onto the current header order (tolerates column reordering)
+  const map=ch.map(n=>ph.indexOf(n));
+  const out=[cur[0]];
+  cur.slice(1).forEach(r=>out.push(r));
+  prev.slice(1).forEach(r=>{
+    if(!r||r.every(c=>c==null||String(c).trim()===''))return;
+    if(seen.has(keyOf(r,ph)))return;
+    out.push(map.map(i=>i<0?null:r[i]));
+  });
+  return out;
+}
+async function fetchVendorTxnsBlob(){return fetchPOMergedBlob();}
 // ServiceTitan Bills report (Bills Reconciliation tab, ServiceTitan side) —
 // as of 2026-09-18, per Ariel's request, moved off GAS_URL ('?report=
 // servicetitanBills') onto Azure, reusing the SAME Purchase Order
@@ -5091,7 +5108,7 @@ function filterSTBillsRows(rawRows){
   });
 }
 async function fetchSTBillsBlob(){
-  const rows=await fetchBlobXLSX(PO_CONFIG.sasUrl);
+  const rows=await fetchPOMergedBlob();
   return filterSTBillsRows(rows);
 }
 // ServiceTitan Membership Balance source (see ST_MEMBERSHIP_CONFIG up top) —
