@@ -551,26 +551,42 @@ function openKb(id){
 }
 function kbFilter(q){
   q = (q||'').trim().toLowerCase();
-  var secs = Array.prototype.slice.call(document.querySelectorAll('.kb-sec')), n = 0;
+  var secs = Array.prototype.slice.call(document.querySelectorAll('.kb-sec')), n = 0, kn = 0;
   secs.forEach(function(s){
-    var hit = !q || s.textContent.toLowerCase().indexOf(q) >= 0;
+    var kpis = Array.prototype.slice.call(s.querySelectorAll('.kb-kpi')), hit;
+    if(kpis.length){
+      var any = 0, sum = s.querySelector('summary'), titleHit = q && sum && sum.textContent.toLowerCase().indexOf(q) >= 0;
+      kpis.forEach(function(k){ var h = !q || titleHit || k.textContent.toLowerCase().indexOf(q) >= 0; k.style.display = h ? '' : 'none'; if(h) any++; });
+      if(q) kn += any;
+      hit = !q || any > 0;
+    } else hit = !q || s.textContent.toLowerCase().indexOf(q) >= 0;
     s.style.display = hit ? '' : 'none'; if(hit && q) s.open = true; if(hit) n++;
     var a = document.querySelector('#kbToc a[data-id="'+s.id+'"]'); if(a) a.style.display = hit ? '' : 'none';
   });
-  $('kbCount').textContent = q ? n+' of '+secs.length+' sections match' : '';
-  $('kbNone').style.display = n ? 'none' : '';
+  Array.prototype.forEach.call(document.querySelectorAll('.kb-part'), function(p){
+    var part = p.getAttribute('data-part'), vis = Array.prototype.some.call(document.querySelectorAll('.kb-sec[data-part="'+part+'"]'), function(s){ return s.style.display !== 'none'; });
+    p.style.display = vis ? '' : 'none';
+    var h = document.querySelector('#kbToc .kb-toc-part[data-part="'+part+'"]'); if(h) h.style.display = vis ? '' : 'none';
+  });
+  var c = document.getElementById('kbCount'); if(c) c.textContent = q ? n+' of '+secs.length+' sections match'+(kn ? ' · '+kn+' KPI'+(kn===1?'':'s') : '') : '';
+  var e = document.getElementById('kbNone'); if(e) e.style.display = n ? 'none' : '';
 }
 function initKb(){
-  var toc = $('kbToc'); if(toc === NOEL || toc.querySelector('a')) return;
-  document.querySelectorAll('.kb-sec').forEach(function(s){
+  var toc = document.getElementById('kbToc'); if(!toc || toc.querySelector('a')) return;
+  Array.prototype.forEach.call(document.querySelectorAll('.kb-part, .kb-sec'), function(s){
+    if(s.classList.contains('kb-part')){
+      var h = document.createElement('div'); h.className = 'kb-toc-part'; h.setAttribute('data-part', s.getAttribute('data-part'));
+      h.textContent = s.querySelector('span').textContent+' · '+s.childNodes[1].textContent.trim(); toc.appendChild(h); return;
+    }
     var a = document.createElement('a'); a.setAttribute('data-id', s.id);
-    a.textContent = s.querySelector('summary').textContent.replace(/^\d+/, '').trim();
+    var sum = s.querySelector('summary'), sub = sum.querySelector('.kb-sum-sub');
+    a.textContent = sum.textContent.replace(sub ? sub.textContent : '', '').replace(/^\d+/, '').trim();
     a.addEventListener('click', function(){ openKb(s.id); });
     toc.appendChild(a);
   });
-  $('kbSearch').addEventListener('input', function(){ kbFilter(this.value); });
-  $('kbExpand').addEventListener('click', function(){ document.querySelectorAll('.kb-sec').forEach(function(s){ if(s.style.display!=='none') s.open = true; }); });
-  $('kbCollapse').addEventListener('click', function(){ document.querySelectorAll('.kb-sec').forEach(function(s){ s.open = false; }); });
+  document.getElementById('kbSearch').addEventListener('input', function(){ kbFilter(this.value); });
+  document.getElementById('kbExpand').addEventListener('click', function(){ document.querySelectorAll('.kb-sec').forEach(function(s){ if(s.style.display!=='none') s.open = true; }); });
+  document.getElementById('kbCollapse').addEventListener('click', function(){ document.querySelectorAll('.kb-sec').forEach(function(s){ s.open = false; }); });
 }
 
 /* ---------- wiring ---------- */
