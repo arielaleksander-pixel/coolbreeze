@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="cb-build" content="2026-11-08.2">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coolbreeze · Knowledge Base</title>
+<link rel="stylesheet" href="cb-pages.css">
+</head>
+<body data-cb-page="kb">
+<header>
+  <div class="hdr-l">
+    <svg class="logo-svg" viewBox="0 0 190 48" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="24" cy="24" r="22" fill="#0a2540" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+      <path d="M9 17 Q24 8 39 17" stroke="#22d3ee" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+      <path d="M7 24 Q24 14 41 24" stroke="#5eead4" stroke-width="3.2" fill="none" stroke-linecap="round" opacity=".85"/>
+      <path d="M9 31 Q24 22 39 31" stroke="#a5f3fc" stroke-width="3.2" fill="none" stroke-linecap="round" opacity=".7"/>
+      <text x="54" y="21" font-family="'Segoe UI',system-ui,sans-serif" font-size="15.5" font-weight="800" fill="#ffffff" letter-spacing="-0.3">Coolbreeze</text>
+      <text x="54" y="35" font-family="'Segoe UI',system-ui,sans-serif" font-size="9" font-weight="600" fill="rgba(255,255,255,0.5)" letter-spacing="1.3">HEATING &amp; AIR CONDITIONING</text>
+    </svg>
+    <div class="hdr-div"></div>
+    <div class="hdr-t">
+      <h1>Knowledge Base</h1>
+      <p>How the dashboard works · what to do when something looks wrong</p>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <span class="hdr-badge svc-badge">❄ HVAC Services</span>
+  </div>
+</header>
+<nav class="cb-pagebar"><div class="cb-links"><a href="index.html"><span class="ic">🏠</span>Home</a><a href="dashboard.html"><span class="ic">📊</span>Executive Dashboard</a><a href="knowledge-base.html" class="on"><span class="ic">📚</span>Knowledge Base</a><a href="health.html"><span class="ic">🩺</span>Dashboard Health <i class="hl-dot wait" id="hlNavDot"></i></a></div><span class="cb-ver" id="cbVer"></span></nav>
+
+<!-- ══════════════ KNOWLEDGE BASE — added 2026-11-08, mirrored from the Best Plumber dashboard ══════════════ -->
+<div class="db-panel" id="db-kb">
+<div class="fbar"><label>Knowledge Base</label><span class="finfo">How the dashboard works · what to do when something looks wrong</span></div>
+<div class="kb-wrap">
+  <nav class="kb-toc" id="kbToc"><h4>On this page</h4></nav>
+  <div>
+    <div class="kb-top">
+      <input type="search" id="kbSearch" placeholder="Search the guide (for example: 403, QuickBooks, January, token, Howard)…" autocomplete="off">
+      <button type="button" class="hl-btn ghost" id="kbExpand">Expand all</button>
+      <button type="button" class="hl-btn ghost" id="kbCollapse">Collapse all</button>
+      <span class="kb-count" id="kbCount"></span>
+    </div>
+    <div class="kb-intro">This guide is for the owners. It explains in plain language how data gets into the dashboard, what has to stay healthy for it to keep updating, and what to do when something looks wrong. You do not need to write code to use it. The <b>Dashboard Health</b> page checks many of these things automatically. Logins and account names are deliberately not shown here, because this page is part of the dashboard file. Items marked <span class="kb-confirm">To confirm</span> still need to be checked against how Cool Breeze’s setup really works.</div>
+
+    <details class="kb-sec" id="kb-about" open><summary><span class="kb-n">1</span>About Cool Breeze</summary><div class="kb-body">
+      <p><b>Cool Breeze Heating &amp; Air Conditioning</b> is a <b>100% women-owned, women-led</b> HVAC company based in Reisterstown, Maryland, serving homes across Central Maryland. Its approach is service-first: look at each home and recommend the solution that fits it, with honest, transparent service, a local team focused on long-term comfort, and responsive service when comfort can’t wait.</p>
+      <table>
+        <tr><th>Item</th><th>Details</th></tr>
+        <tr><td>Address</td><td>12300 Owings Mills Blvd, Ste 6, Reisterstown, MD 21136</td></tr>
+        <tr><td>Phone</td><td>(410) 210-4847 · alternate (410) 549-0323</td></tr>
+        <tr><td>Hours</td><td>Monday to Friday, 7:30am to 4pm. After-hours and weekend service for HVAC emergencies. Same-business-day responses when the schedule allows.</td></tr>
+        <tr><td>License</td><td>Master HVAC #16443. New installations are done by licensed professionals and carry a one-year warranty.</td></tr>
+        <tr><td>Reviews</td><td>190+ Google reviews (the Reviews tab reads them live through Windsor.ai).</td></tr>
+        <tr><td>Website</td><td><a class="kb-link" href="https://www.coolbreezeservicetoday.com/" target="_blank" rel="noopener">coolbreezeservicetoday.com</a> · <a class="kb-link" href="https://www.facebook.com/CoolBreezeMD/" target="_blank" rel="noopener">Facebook</a></td></tr>
+      </table>
+      <h5>What Cool Breeze does</h5>
+      <table>
+        <tr><th>Area</th><th>Services</th></tr>
+        <tr><td>Cooling</td><td>AC repair, replacement and installation, AC maintenance, ductless mini splits, thermostats and controls</td></tr>
+        <tr><td>Heating</td><td>Furnace installation, repair and maintenance; heat pump installation, repair and maintenance</td></tr>
+        <tr><td>Indoor air quality</td><td>Air purifiers and whole-home humidifiers</td></tr>
+        <tr><td>Residential new construction</td><td>A major specialty, for custom home builders, general contractors, developers, new home communities, homeowners building a house, and additions or renovations</td></tr>
+        <tr><td>Offers</td><td>Free estimates on new systems and replacements, a free second opinion on qualifying products, financing, and seasonal specials</td></tr>
+      </table>
+      <h5>New construction: how a project runs</h5>
+      <div class="kb-flow">
+        <div class="kb-node"><b>1 · Project review</b><small>HVAC planning with the builder</small></div>
+        <div class="kb-node"><b>2 · Load calculation</b><small>Sizing by square footage, windows, insulation, layout, sun</small></div>
+        <div class="kb-node"><b>3 · Duct design</b><small>Custom ductwork designed and fabricated</small></div>
+        <div class="kb-node"><b>4 · Rough-in</b><small>Before walls and ceilings close</small></div>
+        <div class="kb-node"><b>5 · Equipment</b><small>Installed once the home is ready</small></div>
+        <div class="kb-node"><b>6 · Startup</b><small>Testing and final walkthrough</small></div>
+      </div>
+      <div class="kb-call blue"><span>💡</span><span><b>Why this matters for the dashboard:</b> new-construction work is billed in stages on invoices that have no ServiceTitan job attached. That is why the Jobs tab adds a separate <b>Construction</b> revenue line (invoices booked to “Job Income: Construction Job”) next to Service revenue.</span></div>
+      <h5>Maintenance memberships</h5>
+      <table>
+        <tr><th>Plan</th><th>Price</th><th>Includes</th></tr>
+        <tr><td><b>Essential</b></td><td>From $249 a year per system, renews automatically</td><td>Two system checks a year, priority recommendations, member savings</td></tr>
+        <tr><td><b>Performance</b></td><td>From $349 a year per system, renews automatically</td><td>Seasonal tune-ups, cleaning, repair discounts, priority service</td></tr>
+      </table>
+      <p>The <b>Memberships</b> tab tracks these plans (active members, churn, renewals due, deferred revenue), and <b>Membership Reconciliation</b> checks that QuickBooks and ServiceTitan agree on each customer’s balance. ServiceTitan may also show older plan names (for example “Classic”).</p>
+      <h5>Service area</h5>
+      <table>
+        <tr><th>County</th><th>Towns</th></tr>
+        <tr><td>Baltimore County</td><td>Arbutus, Bowleys Quarters, Brooklandville, Butler, Carney, Catonsville, Chase, Cockeysville, Dundalk, Edgemere, Essex, Fork, Garrison, Glen Arm, Glyndon, Gwynn Oak, Halethorpe, Hampton, Hunt Valley, Kingsville, Lansdowne, Lochearn, Lutherville Timonium, Middle River, Milford Mill, Monkton, Nottingham, Overlea, Owings Mills, Parkton, Parkville, Perry Hall, Phoenix, Pikesville, Randallstown, Rosedale, Sparks Glencoe, Sparrows Point, Stevenson, Towson, White Hall, White Marsh, Woodlawn</td></tr>
+        <tr><td>Carroll County</td><td>Eldersburg, Finksburg, Hampstead, Keymar, Manchester, Marriottsville, Mount Airy, New Windsor, Sykesville, Taneytown, Union Bridge, Westminster, Woodbine</td></tr>
+        <tr><td>Howard County</td><td>Annapolis Junction, Clarksville, Columbia, Cooksville, Elkridge, Ellicott City, Fulton, Glenelg, Glenwood, Jessup, Lisbon, North Laurel, Savage, Simpsonville, West Friendship, Woodstock</td></tr>
+        <tr><td>Anne Arundel County</td><td>Arnold, Brooklyn Park, Crownsville, Ferndale, Glen Burnie, Hanover, Lake Shore, Linthicum Heights, Millersville, Odenton, Pasadena, Riviera Beach, Severn, Severna Park</td></tr>
+      </table>
+      <p class="hm-foot" style="margin-top:6px">Source: coolbreezeservicetoday.com (home, About and New Construction pages), read November 8, 2026. Prices and offers can change; check the website before quoting them.</p>
+    </div></details>
+
+    <details class="kb-sec" id="kb-how"><summary><span class="kb-n">2</span>The big picture: how the dashboard gets its data</summary><div class="kb-body">
+      <p>The dashboard is a single web page. It does not store data itself. Every time someone opens it, the page downloads fresh Excel files from Microsoft Azure, calculates everything in the browser and draws the charts. So <b>the dashboard is only as current as those Excel files</b>.</p>
+      <div class="kb-flowl">Where the numbers come from</div>
+      <div class="kb-flow">
+        <div class="kb-node"><b><i class="hl-dot wait" data-hlnode="st"></i>ServiceTitan</b><small>Jobs, estimates, invoices, calls, web bookings, memberships, customers, purchase orders and bills</small></div>
+        <div class="kb-node"><b><i class="hl-dot wait" data-hlnode="qb"></i>QuickBooks</b><small>Bills and the Membership Agreements account report</small></div>
+        <div class="kb-node"><b><i class="hl-dot wait" data-hlnode="flows"></i>Scheduled reports → automation</b><small>Each report is exported on a schedule and saved into Azure <span class="kb-confirm">To confirm</span> which tool does this</small></div>
+        <div class="kb-node"><b><i class="hl-dot wait" data-hlnode="azure"></i>Azure storage</b><small>Holds the Excel files (storage account “coolbreeze”, container “coolbreeze”)</small></div>
+        <div class="kb-node"><b>This dashboard</b><small>Downloads the files and draws the charts</small></div>
+      </div>
+      <div class="kb-flowl">Google reviews</div>
+      <div class="kb-flow">
+        <div class="kb-node"><b>Google Business Profile</b><small>Customers leave reviews</small></div>
+        <div class="kb-node"><b><i class="hl-dot wait" data-hlnode="windsor"></i>Windsor.ai</b><small>Google My Business connector, read live by the Reviews tab</small></div>
+        <div class="kb-node"><b>Reviews tab</b><small>Stars, positive vs. negative, running totals</small></div>
+      </div>
+      <div class="kb-flowl">Google Ads spend</div>
+      <div class="kb-flow">
+        <div class="kb-node"><b>Google Ads</b><small>Account 461-457-1656 (today: the Local Services Ads campaign)</small></div>
+        <div class="kb-node"><b><i class="hl-dot wait" data-hlnode="windsor"></i>Windsor.ai</b><small>Spend, clicks and impressions, read live by the Marketing tab</small></div>
+        <div class="kb-node"><b>Marketing Overview</b><small>Spend, ROAS, cost per lead, “Saw us” / “Clicked”</small></div>
+      </div>
+      <p>Each Google Ads campaign is matched to a ServiceTitan campaign so its spend lands in the right Campaign Category: the Local Services Ads campaign (<code>LocalServicesCampaign:SystemGenerated:…</code>) counts as <b>Google Local Service Ads - HVAC</b>. A new Google Ads campaign whose name is not a ServiceTitan campaign shows up as Uncategorized until it is added to the match list in the dashboard settings.</p>
+      <p><b>Google Business Profile</b> (the free Google listing) also comes through Windsor.ai: its clicks and views are counted under <b>Google Organic</b>, with no spend. They feed “Saw us” and “Clicked” in the customer journey and the Impressions / Clicks columns.</p>
+      <div class="kb-flowl">QuickBooks marketing spend</div>
+      <div class="kb-flow">
+        <div class="kb-node"><b>QuickBooks</b><small>Expenses, checks and card charges on SALES &amp; MARKETING:Advertising &amp; Marketing</small></div>
+        <div class="kb-node"><b><i class="hl-dot wait" data-hlnode="windsor"></i>Windsor.ai</b><small>QuickBooks connector, read live by the Marketing tab</small></div>
+        <div class="kb-node"><b>Marketing Spend</b><small>Added to the Google Ads spend</small></div>
+      </div>
+      <p>Marketing paid outside Google Ads is read from <b>QuickBooks</b>, by the date of each charge. The vendor decides the campaign: <b>Hibu</b> → Google Organic; <b>JD Marketing</b> and <b>Google</b> → Google Ads - Repairs &amp; HVAC; any other vendor (for example Money Mailer) counts under its own name, as Uncategorized. Google charges for Google Ads account <b>…1656</b> are left out, because that account’s spend already comes from the Google Ads feed. Only QuickBooks <i>expenses</i> (card charges, checks, cash) are read; a marketing <i>bill</i> entered against a vendor is not included.</p>
+      <div class="kb-flowl">How the dashboard page is published</div>
+      <div class="kb-flow">
+        <div class="kb-node"><b>Dashboard file</b><small>Coolbreeze_Accounting_Dashboard.html</small></div>
+        <div class="kb-node"><b><i class="hl-dot wait" data-hlnode="github"></i>GitHub (optional)</b><small>If the page is kept in a repository</small></div>
+        <div class="kb-node"><b><i class="hl-dot wait" data-hlnode="site"></i>Where it is hosted</b><small><span class="kb-confirm">To confirm</span> the live address</small></div>
+      </div>
+      <div class="kb-call gray"><span>💡</span><span><b>Rule of thumb:</b> if a number looks old, the problem is almost never the dashboard page. It is nearly always the Excel file behind it (the scheduled report did not arrive or was not saved) or the access key to that file (expired).</span></div>
+      <p><span class="kb-link" onclick="cbGo('health')">Open Dashboard Health →</span> to see which of these links is working right now. The small dots above turn green, amber or red after a check.</p>
+    </div></details>
+
+    <details class="kb-sec" id="kb-health"><summary><span class="kb-n">3</span>How to read the Dashboard Health page</summary><div class="kb-body">
+      <p>Every check is <b>green (OK)</b>, <b>amber (look into it)</b>, <b>red (a problem)</b> or <b>blue (information only)</b>. The checks run by themselves a few seconds after the dashboard opens and again every 10 minutes while it stays open. Press <b>Run checks now</b> any time.</p>
+      <table>
+        <tr><th>Section</th><th>What it checks</th><th>How</th></tr>
+        <tr><td>1 · Published &amp; up to date</td><td>Which version you are running, whether a newer one is published, and (if connected) GitHub’s latest commit and publish run</td><td>Compares this page with the copy the server is serving; reads GitHub’s public API</td></tr>
+        <tr><td>2 · Azure data feeds</td><td>Every Excel file: reachable, when it last changed, and when its access key expires</td><td>Asks Azure for each file’s “Last modified” date without downloading it</td></tr>
+        <tr><td>3 · Report automations</td><td>Whether each ServiceTitan / QuickBooks report has recently been written to Azure</td><td>Inferred from the file dates: a report that has not been written in days has probably stopped</td></tr>
+        <tr><td>4 · Live data</td><td>Whether this session’s downloads worked, the newest completed job, and the Windsor.ai reviews feed</td><td>Reads what the dashboard itself loaded</td></tr>
+        <tr><td>5 · What expires</td><td>Access keys and the yearly “older years” update</td><td>Dates read from the file links and this guide</td></tr>
+      </table>
+      <div class="kb-call yellow"><span>⚠️</span><span><b>What it cannot see.</b> A web page cannot look inside ServiceTitan, QuickBooks, the automation that saves the files, Windsor.ai’s settings, or a private GitHub repository without a token. For those it shows the <i>effect</i> (an old file, an empty feed) rather than the cause. When something is amber or red, the matching section of this guide says what to check.</span></div>
+      <p>The timing rules used for “stale” are: a daily feed turns amber after 2 days and red after 4 days without an update; an access key turns amber 60 days and red 14 days before it expires. These thresholds sit in one place at the top of the Health script and can be changed. <span class="kb-confirm">To confirm</span> the real schedule of each ServiceTitan and QuickBooks report.</p>
+    </div></details>
+
+    <details class="kb-sec" id="kb-alive"><summary><span class="kb-n">4</span>What must stay alive</summary><div class="kb-body">
+      <p>If any of these stops, part of the dashboard goes stale or blank. Owners should know who controls each one, and there should be at least <b>two owners</b> for every system so nothing depends on one person.</p>
+      <table>
+        <tr><th>Piece</th><th>What it does</th><th>What breaks if it stops</th></tr>
+        <tr><td>ServiceTitan scheduled reports</td><td>Export Jobs, Estimates, Invoices, Calls, Web Bookings, Memberships, Customers and Purchase Orders on a schedule</td><td>Jobs, Sales, Marketing, Memberships, AR, Customer Acquisition and the ServiceTitan side of both reconciliations go stale</td></tr>
+        <tr><td>QuickBooks scheduled reports</td><td>Export the Bills report and the Membership Agreements account report</td><td>The QuickBooks side of Bills and Membership Reconciliation goes stale, so differences look bigger than they are</td></tr>
+        <tr><td>The automation that saves each report to Azure <span class="kb-confirm">To confirm</span></td><td>Moves each exported report into Azure Blob Storage with a fixed file name</td><td>The dashboard shows old numbers, with no error on the dashboard</td></tr>
+        <tr><td>Azure Blob Storage (“coolbreeze”)</td><td>Hosts the Excel files</td><td>All tabs fail to load</td></tr>
+        <tr><td>SAS tokens (file access keys)</td><td>Let the dashboard read each file</td><td>That tab goes blank (HTTP 403 error)</td></tr>
+        <tr><td>Azure CORS rule</td><td>Lets the web page download from Azure</td><td>“Failed to fetch” / “Network error” on every tab</td></tr>
+        <tr><td>Windsor.ai (Google My Business, Google Ads and QuickBooks connectors)</td><td>Feeds Google reviews to the Reviews tab, Google Ads spend, clicks and impressions, Google Business Profile clicks and views (Google Organic), and QuickBooks marketing expenses to the Marketing tab</td><td>Reviews tab is empty; Marketing Spend, ROAS and Cost per Lead show —</td></tr>
+        <tr><td>Hosting of the page <span class="kb-confirm">To confirm</span></td><td>Serves the dashboard at its web address</td><td>The link stops working or does not get updates</td></tr>
+      </table>
+    </div></details>
+
+    <details class="kb-sec" id="kb-mailbox"><summary><span class="kb-n">5</span>The #1 risk: the scheduled reports and the automation</summary><div class="kb-body">
+      <div class="kb-call red"><span>🚨</span><span><b>The #1 thing that can silently kill the dashboard:</b> every Excel file depends on a scheduled report being sent and an automation saving it to Azure. If the account those reports are sent to, or the account the automation signs in with, has its password changed (or is locked, loses its license, or is forced to sign in again by an IT policy), <b>the files stop updating</b> and the dashboard slowly goes stale with no error on the dashboard itself.</span></div>
+      <div class="kb-call red"><span>🚫</span><span><b>Do not change the password of the report account without a plan.</b> Tell IT and anyone who can reset passwords. After a password change, the automation’s connections usually have to be signed in again before anything moves.</span></div>
+      <h5>How a typical report reaches the dashboard</h5>
+      <ol>
+        <li><b>ServiceTitan or QuickBooks</b> runs a scheduled report and sends it out as an Excel attachment.</li>
+        <li><b>The automation</b> picks up the attachment <span class="kb-confirm">To confirm</span> (Best Plumber uses Power Automate for this; Cool Breeze may use the same).</li>
+        <li><b>It saves the file</b> into the “coolbreeze” storage account with a fixed file name, replacing the previous copy.</li>
+        <li>The dashboard downloads that file the next time anyone opens it or presses Refresh.</li>
+      </ol>
+      <p>Three links can break the chain: the report being sent, the automation reading it, and the automation saving it to Azure.</p>
+      <h5>What breaks it</h5>
+      <ul>
+        <li><b>Password change</b> on the report account (the most common cause).</li>
+        <li><b>Company IT policy update</b>, forced sign-out, or a new multi-factor requirement on that account.</li>
+        <li><b>License removed</b>, account disabled, or the mailbox deleted or full.</li>
+        <li><b>A ServiceTitan or QuickBooks report schedule edited</b>, paused, or sent to a different address.</li>
+        <li><b>An email rule</b> that moves the reports out of the inbox before the automation sees them.</li>
+      </ul>
+      <h5>What to do after a password change or an “action required” alert</h5>
+      <ol>
+        <li>Sign in to the automation tool as the report account and reconnect (reauthenticate) every connection it lists.</li>
+        <li>Open the automations that feed the core files (Jobs, Invoices, Estimates, Purchase Orders, Bills Quickbooks) and check their run history for a green success.</li>
+        <li><b>Resend the reports</b> from ServiceTitan and QuickBooks (or run the schedules manually). Reports that arrived while the connection was broken may not be picked up after you fix it.</li>
+        <li><b>Confirm in the dashboard.</b> Reload, press Refresh, and check on <span class="kb-link" onclick="cbGo('health')">Dashboard Health</span> that the files show today’s or yesterday’s date.</li>
+        <li>Note the date and what you fixed.</li>
+      </ol>
+      <div class="kb-call gray"><span>🩺</span><span><b>How you will see it on the Health page:</b> several ServiceTitan files turn amber/red at the same time while the QuickBooks files stay fresh (or the other way round). The page calls this pattern out explicitly. If <b>both</b> go stale together, the automation itself has probably stopped.</span></div>
+    </div></details>
+
+    <details class="kb-sec" id="kb-files"><summary><span class="kb-n">6</span>The data files the dashboard reads</summary><div class="kb-body">
+      <p>These live in Azure Blob Storage (account and container “coolbreeze”). <b>Do not rename, move or delete them</b>, and do not change their column headers. The dashboard finds data by file link and by column name.</p>
+      <table>
+        <tr><th>Dashboard area</th><th>File(s)</th><th>From</th></tr>
+        <tr><td>Jobs</td><td>Jobs Service Titan · Jobs Service Titan Previous Year · Jobs Previous Prior Year</td><td>ServiceTitan</td></tr>
+        <tr><td>Sales (Estimates)</td><td>Estimates Service Titan · Estimates Previous Year</td><td>ServiceTitan</td></tr>
+        <tr><td>Marketing · Calls</td><td>Calls Service Titan · Calls Previous Years</td><td>ServiceTitan</td></tr>
+        <tr><td>Marketing · Web bookings</td><td>Web Booking Service Titan</td><td>ServiceTitan</td></tr>
+        <tr><td>Accounts Receivable and Construction revenue</td><td>Invoices Service Titan · Invoices Previous Year · Invoices Prior Previous Year</td><td>ServiceTitan</td></tr>
+        <tr><td>Customer Acquisition</td><td>Customer List (needs First Job Completed, Customers Lifetime Revenue, Original Campaign, Created On and Phone Number columns)</td><td>ServiceTitan</td></tr>
+        <tr><td>Memberships and Membership Reconciliation (ServiceTitan side)</td><td>Memberships</td><td>ServiceTitan</td></tr>
+        <tr><td>Bills Reconciliation (ServiceTitan side) and vendor totals</td><td>Purchase Orders This Year · Purchase Orders Last Year</td><td>ServiceTitan</td></tr>
+        <tr><td>Bills Reconciliation (QuickBooks side)</td><td>Bills Quickbooks</td><td>QuickBooks</td></tr>
+        <tr><td>Membership Reconciliation (QuickBooks side)</td><td>Memberships Quickbooks</td><td>QuickBooks</td></tr>
+        <tr><td>Reviews</td><td>No file: read live from Windsor.ai</td><td>Google</td></tr>
+        <tr><td>Marketing spend (Google Ads)</td><td>No file: read live from Windsor.ai</td><td>Google Ads</td></tr>
+        <tr><td>Marketing spend (QuickBooks: Hibu, JD Marketing, Google, Money Mailer…)</td><td>No file: read live from Windsor.ai</td><td>QuickBooks</td></tr>
+      </table>
+      <div class="kb-call red"><span>🔒</span><span><b>Never paste a full file link</b> (the one with <code>?sv=…&amp;sig=…</code>) into emails, chats or public pages. The link is the password to that file. The same goes for the Windsor.ai API key.</span></div>
+    </div></details>
+
+    <details class="kb-sec" id="kb-yearly"><summary><span class="kb-n">7</span>This year, last year, older years: the yearly update</summary><div class="kb-body">
+      <div class="kb-call yellow"><span>📅</span><span><b>One job must be done by a person every year, in early January.</b> The “this year” and “last year” ServiceTitan reports move by themselves on January 1. The “older years” reports are fixed snapshots that someone has to regenerate by hand. If this is skipped, a whole year of history disappears from the dashboard.</span></div>
+      <table>
+        <tr><th>Report</th><th>Date range</th><th>Updates itself?</th></tr>
+        <tr><td><b>This year</b></td><td>Dynamic: “this year”</td><td>Yes. ServiceTitan moves it on Jan 1.</td></tr>
+        <tr><td><b>Last year</b></td><td>Dynamic: “last year”</td><td>Yes. ServiceTitan moves it on Jan 1.</td></tr>
+        <tr><td><b>Older years</b> (static)</td><td>Fixed dates: everything before last year</td><td><b>No.</b> A person must edit the dates once a year.</td></tr>
+      </table>
+      <p><b>Example for January 2027:</b> “this year” becomes 2027 and “last year” becomes 2026 by themselves, but nothing moves 2025 into “older years”. If nobody updates it, <b>2025 is missing from Jobs and Invoices</b>.</p>
+      <h5>Report families and their files</h5>
+      <table>
+        <tr><th>Report family</th><th>This year (automatic)</th><th>Last year (automatic)</th><th>Older years (manual)</th></tr>
+        <tr><td>Jobs</td><td>Jobs Service Titan</td><td>Jobs Service Titan Previous Year</td><td>Jobs Previous Prior Year</td></tr>
+        <tr><td>Invoices</td><td>Invoices Service Titan</td><td>Invoices Previous Year</td><td>Invoices Prior Previous Year</td></tr>
+        <tr><td>Estimates</td><td>Estimates Service Titan</td><td>Estimates Previous Year</td><td>— (none yet)</td></tr>
+        <tr><td>Calls</td><td>Calls Service Titan</td><td>Calls Previous Years</td><td>— (none yet)</td></tr>
+        <tr><td>Purchase Orders</td><td>Purchase Orders This Year</td><td>Purchase Orders Last Year</td><td>— (none yet)</td></tr>
+      </table>
+      <p>Estimates, Calls and Purchase Orders have no “older years” file yet. In January 2027 their 2025 data drops out of the dashboard unless an older-years report is added for them. <span class="kb-confirm">To confirm</span> whether that history is needed.</p>
+      <h5>Checklist (first week of January, suggested January 2)</h5>
+      <ol>
+        <li>In ServiceTitan, open <b>each “older years” scheduled report</b> (Jobs, Invoices).</li>
+        <li>Change the end date to <b>December 31 of the year before last year</b> (in January 2027: December 31, 2025). Leave the start date at the beginning of history.</li>
+        <li>Do <b>not</b> change the report name, column layout or the attachment’s file name.</li>
+        <li>Send the report now so the automation saves it.</li>
+        <li>In Azure, confirm the file’s <b>Last modified</b> is today and the <b>size grew</b>.</li>
+        <li>Open the dashboard, press <b>Hard Refresh</b>, and check one number from the added year against ServiceTitan.</li>
+      </ol>
+      <div class="kb-call yellow"><span>⚠️</span><span>Make sure “older years” does <b>not</b> overlap with “last year”. Jobs and the AR list skip duplicates, but Construction revenue adds the invoice files together, so an overlap would double count it.</span></div>
+    </div></details>
+
+    <details class="kb-sec" id="kb-weekly"><summary><span class="kb-n">8</span>Routine: 30 minutes a week</summary><div class="kb-body">
+      <ol>
+        <li><b>Open Dashboard Health</b> and read the banner at the top. Anything amber or red is listed under “Needs attention”.</li>
+        <li><b>Check the dates.</b> On the Jobs tab, confirm the latest completed job is yesterday or today. Check the “Export files loaded” badge at the top right.</li>
+        <li><b>Click through every tab.</b> Look for blank charts, “—” where a number should be, or error messages.</li>
+        <li><b>Spot check two numbers.</b> For example, last week’s completed jobs against ServiceTitan, and the QuickBooks Total on Bills Reconciliation against the QuickBooks Bills report.</li>
+        <li><b>Work the reconciliation exceptions.</b> On Bills Reconciliation, look at vendors with a discrepancy; on Membership Reconciliation, look at the biggest differences.</li>
+        <li><b>Check Memberships → Data Warnings</b> for active plans with a $0 billing total or a negative deferred balance.</li>
+        <li><b>Log anything odd</b> with a screenshot and send it to the dashboard owner.</li>
+      </ol>
+    </div></details>
+
+    <details class="kb-sec" id="kb-expire"><summary><span class="kb-n">9</span>Things that expire (calendar these)</summary><div class="kb-body">
+      <table>
+        <tr><th>Item</th><th>Why it matters</th><th>What to do</th></tr>
+        <tr><td><b>SAS tokens</b></td><td>Each Azure file link has an end date. After that the tab goes blank. Most current tokens expire in 2030.</td><td>Put each expiry on a shared calendar and renew <b>at least 30 days before</b>. The Health page lists the earliest expiry.</td></tr>
+        <tr><td>The automation’s connections</td><td>The automation signs in to the report account and to Azure. A password change, policy update or license change breaks it.</td><td>Right after any change to that account, reconnect the automation.</td></tr>
+        <tr><td>Windsor.ai connection</td><td>The Google Business Profile gets disconnected if its login changes, and the API key can be reset.</td><td>Reconnect from the Windsor.ai dashboard. If the key changes, the dashboard settings need the new key.</td></tr>
+        <tr><td>GitHub / hosting access (if used)</td><td>Only people with access can publish a new version.</td><td>Keep at least two owners with admin access.</td></tr>
+        <tr><td><b>Yearly:</b> “older years” ServiceTitan reports</td><td>Fixed snapshots. ServiceTitan does not update them on Jan 1.</td><td>Every January 2, follow the yearly checklist.</td></tr>
+      </table>
+    </div></details>
+
+    <details class="kb-sec" id="kb-sas"><summary><span class="kb-n">10</span>How to renew a file access key (SAS token)</summary><div class="kb-body">
+      <p>Do this when a tab shows a 403 error, or before the expiry date. Container-level tokens are easier to maintain than file-level ones: a file-level token only works for one exact file, so renewing means repeating the steps for every file.</p>
+      <ol>
+        <li>Sign in to the <b>Azure Portal</b> and open <b>Storage accounts → coolbreeze</b>.</li>
+        <li>Go to <b>Containers</b> and open the <b>coolbreeze</b> container.</li>
+        <li>Choose <b>Shared access tokens</b> (container level, so one token covers every file in it).</li>
+        <li>Set permission to <b>Read</b> and <b>List</b> only. Set a long expiry date. Start time a few minutes in the past to avoid clock issues.</li>
+        <li>Click <b>Generate SAS token and URL</b> and copy the <b>Blob SAS token</b>.</li>
+        <li>Send the new token to whoever maintains the dashboard and ask them to <b>replace it in the dashboard settings</b>. Each file link lives in its tab’s configuration block, so the old token has to be swapped there.</li>
+        <li>Publish the updated page, reload the dashboard and click through the affected tab to confirm it loads.</li>
+      </ol>
+    </div></details>
+
+    <details class="kb-sec" id="kb-publish"><summary><span class="kb-n">11</span>How to publish a change to the dashboard</summary><div class="kb-body">
+      <p>All page changes are made in one file: <b>Coolbreeze_Accounting_Dashboard.html</b>.</p>
+      <ol>
+        <li>Take a backup copy of the current file first (name it <code>…backup_YYYYMMDD_pre-&lt;what you’re changing&gt;.html</code>).</li>
+        <li>Make the change.</li>
+        <li>Open the page and check every tab loads with no errors.</li>
+        <li>Publish the file to wherever the dashboard is hosted <span class="kb-confirm">To confirm</span>.</li>
+        <li>Open <span class="kb-link" onclick="cbGo('health')">Dashboard Health</span>: section 1 confirms the site now serves the new version.</li>
+      </ol>
+      <div class="kb-call yellow"><span>⚠️</span><span><b>The page contains data links.</b> The dashboard file has the Azure file links (with read-only tokens) and the Windsor.ai key built in. Anyone who can open the page can view the source and copy them. Keep any repository <b>private</b>, do not post the dashboard address publicly, and consider putting the site behind a sign-in.</span></div>
+    </div></details>
+
+    <details class="kb-sec" id="kb-trouble"><summary><span class="kb-n">12</span>Troubleshooting</summary><div class="kb-body">
+      <table>
+        <tr><th>What you see</th><th>Most likely cause</th><th>What to do</th></tr>
+        <tr><td>Every tab says “Network error” / “Failed to fetch” (no error number)</td><td>Azure CORS rule missing or changed, or the page was opened as a local file</td><td>In Azure: storage account → Resource sharing (CORS) → Blob service. Allowed origins <code>*</code> (or the dashboard’s address), methods GET and HEAD.</td></tr>
+        <tr><td>One tab blank, error 403</td><td>That file’s SAS token expired or was revoked</td><td>Renew the token (section 10).</td></tr>
+        <tr><td>One tab blank, error 404</td><td>File renamed, moved or deleted</td><td>Restore the original file name in Azure.</td></tr>
+        <tr><td>Numbers look old but nothing errors</td><td>A scheduled report was not sent, or the automation stopped saving it</td><td>Check the report schedule in ServiceTitan / QuickBooks, then the automation’s run history. Resend the report, then press Refresh. <span class="kb-link" onclick="cbGo('health')">See which files are stale →</span></td></tr>
+        <tr><td>QuickBooks Total shows $0, or QuickBooks rows vanish</td><td>The QuickBooks report’s layout changed (title rows, footer rows, or column names)</td><td>Compare the new export with an older one. Keep the standard report layout and column names.</td></tr>
+        <tr><td>Bills Reconciliation suddenly shows many “Missing in ST” or “Missing in QB”</td><td>One side’s file is stale, or a report’s date range changed</td><td>Check both Purchase Orders This Year and Bills Quickbooks on the Health page; both should be from the last day or two.</td></tr>
+        <tr><td>A card shows “—” or “Awaiting data source”</td><td>A column was renamed in the export, or that data has not been provided yet</td><td>Compare the file headers to the previous version. Restore the original column names.</td></tr>
+        <tr><td>Marketing Spend, ROAS or Cost per Lead show —</td><td>The Google Ads feed in Windsor.ai failed or was disconnected</td><td>Reconnect the Google Ads account in Windsor.ai, then Hard Refresh. Section 4 of the Health page shows the newest spend day.</td></tr>
+        <tr><td>Hibu, JD Marketing or other QuickBooks marketing spend is missing</td><td>The QuickBooks connector in Windsor.ai failed, or the charge is not on the Advertising &amp; Marketing account (or was entered as a bill)</td><td>Reconnect QuickBooks in Windsor.ai and check the account on the charge. Section 4 of the Health page shows the newest QuickBooks marketing expense.</td></tr>
+        <tr><td>Spend sits under “Uncategorized”</td><td>A new Google Ads campaign is not matched to a ServiceTitan campaign</td><td>Ask the dashboard owner to add it to the campaign match list.</td></tr>
+        <tr><td>Customer Acquisition shows “Awaiting data source”</td><td>Columns missing from the Customer List export</td><td>Add First Job Completed, Customers Lifetime Revenue, Original Campaign, Created On and Phone Number to the ServiceTitan Customer List report. The yellow banner at the top of the page lists which are still missing.</td></tr>
+        <tr><td>Reviews tab empty or not getting new reviews</td><td>Windsor.ai connection or API key</td><td>Reconnect the Google Business Profile in Windsor.ai. Section 4 of the Health page shows the newest review date.</td></tr>
+        <tr><td>A whole year of history is missing (for example 2025 after the new year)</td><td>The “older years” report was not updated in January</td><td>Follow the yearly checklist (section 7), then Hard Refresh.</td></tr>
+        <tr><td>Changes are not showing after publishing</td><td>Browser cache</td><td>Hard refresh (Ctrl+Shift+R) or use the dashboard’s Hard Refresh button.</td></tr>
+      </table>
+    </div></details>
+
+    <details class="kb-sec" id="kb-rules"><summary><span class="kb-n">13</span>Rules to protect the data</summary><div class="kb-body">
+      <ul>
+        <li><b>Never rename Excel columns</b> in the ServiceTitan or QuickBooks exports. Add new columns at the end if needed.</li>
+        <li><b>Never rename or move files</b> in Azure. If a file must be replaced, upload it with the same name.</li>
+        <li><b>Keep the first sheet first.</b> The dashboard reads the first sheet of each workbook.</li>
+        <li><b>Do not edit data files by hand.</b> Fix the source in ServiceTitan or QuickBooks and resend the report.</li>
+        <li><b>Bills match on vendor + month + exact amount.</b> A bill entered with a different vendor name or amount in QuickBooks and ServiceTitan shows as a discrepancy, even if it is the same invoice.</li>
+        <li><b>QuickBooks “Supplies (Shop)” bills are QuickBooks-only</b> by design and are not expected in ServiceTitan.</li>
+        <li><b>Construction invoices</b> must stay on the “Job Income: Construction Job” account, or they drop out of Construction revenue on the Jobs tab.</li>
+        <li><b>Never share SAS links or the Windsor.ai key</b> outside the team.</li>
+      </ul>
+    </div></details>
+
+    <details class="kb-sec" id="kb-contacts"><summary><span class="kb-n">14</span>Who to call</summary><div class="kb-body">
+      <table>
+        <tr><th>Question</th><th>Contact</th></tr>
+        <tr><td>Dashboard looks wrong or a tab is blank</td><td>Ariel</td></tr>
+        <tr><td>ServiceTitan data or exports</td><td><span class="kb-confirm">To confirm</span></td></tr>
+        <tr><td>QuickBooks reports</td><td><span class="kb-confirm">To confirm</span></td></tr>
+        <tr><td>Azure access or billing</td><td><span class="kb-confirm">To confirm</span></td></tr>
+        <tr><td>The report automation</td><td><span class="kb-confirm">To confirm</span></td></tr>
+        <tr><td>Windsor.ai / Google reviews feed</td><td><span class="kb-confirm">To confirm</span></td></tr>
+      </table>
+      <h5>Access checklist for owners</h5>
+      <p>At least one owner should have each of these, stored in the company password manager: Azure Portal login · the report account (and at least one other person who can sign in) · the automation tool · ServiceTitan admin · QuickBooks admin · Windsor.ai · hosting / GitHub access · calendar reminders for every SAS expiry and for January 2 every year.</p>
+    </div></details>
+
+    <details class="kb-sec" id="kb-glossary"><summary><span class="kb-n">15</span>Plain-language glossary</summary><div class="kb-body">
+      <table>
+        <tr><th>Term</th><th>Meaning</th></tr>
+        <tr><td>Azure Blob Storage</td><td>Microsoft’s online file cabinet. The dashboard’s Excel files are kept here.</td></tr>
+        <tr><td>SAS token</td><td>A long key added to a file’s link that lets the dashboard read that file. It has an end date.</td></tr>
+        <tr><td>CORS</td><td>A safety rule in Azure that decides which websites may download its files. If it is wrong, every tab fails to load.</td></tr>
+        <tr><td>Scheduled report</td><td>A ServiceTitan or QuickBooks report set to run and send itself automatically.</td></tr>
+        <tr><td>CAC (customer acquisition cost)</td><td>Advertising spend divided by the number of new customers (first job completed) in the same dates. Lower is better.</td></tr>
+        <tr><td>LTV (lifetime value)</td><td>On the Customer Acquisition page: the average Customers Lifetime Revenue of customers whose first job was in the last 12 months. LTV : CAC above 1.0x means those customers have paid back what they cost to acquire.</td></tr>
+        <tr><td>Reconciliation</td><td>Checking that QuickBooks and ServiceTitan agree: the same bills, or the same membership balance per customer.</td></tr>
+        <tr><td>Deferred revenue</td><td>Membership money collected up front that is earned over the life of the plan.</td></tr>
+        <tr><td>Progressive billing</td><td>Billing a new-construction project in stages instead of one invoice at the end.</td></tr>
+        <tr><td>Windsor.ai</td><td>The service that brings Google reviews into the dashboard.</td></tr>
+        <tr><td>Hard Refresh</td><td>The dashboard button that clears its saved copies and downloads everything again.</td></tr>
+      </table>
+    </div></details>
+
+    <div class="kb-empty" id="kbNone" style="display:none">No section matches your search.</div>
+    <p class="hm-foot">Adapted from the Best Plumber Dashboard Maintenance Guide, November 8, 2026. When Cool Breeze’s setup is confirmed, replace the “To confirm” items.</p>
+  </div>
+</div>
+</div>
+
+
+<script src="cb-health.js"></script>
+</body>
+</html>
