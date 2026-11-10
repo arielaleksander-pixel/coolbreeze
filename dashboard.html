@@ -831,6 +831,18 @@ body.sn-collapsed #topnav #nav-health .hl-navdot{margin-left:0}
 .recon-switch .rs-seg button:hover{color:#fff;background:rgba(255,255,255,.07)}
 .recon-switch .rs-seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .recon-switch .rs-seg button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.recon-switch .rs-exc{position:relative;margin-left:auto;outline:none}
+.recon-switch .rs-exc-btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.22);color:rgba(255,255,255,.8);font-size:12.5px;font-weight:700;cursor:help;white-space:nowrap}
+.recon-switch .rs-exc-btn b{background:var(--accent);color:var(--navy);border-radius:999px;padding:0 7px;font-size:11px;line-height:17px}
+.recon-switch .rs-exc:hover .rs-exc-btn,.recon-switch .rs-exc:focus .rs-exc-btn{border-color:rgba(255,255,255,.55);color:#fff}
+.recon-switch .rs-exc-pop{display:none;position:absolute;right:0;top:calc(100% + 8px);width:400px;max-width:calc(100vw - 32px);z-index:400;background:#0f2338;color:#eef3f9;border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:14px 16px;box-shadow:0 16px 36px rgba(0,0,0,.35);font-size:12.5px;line-height:1.5}
+.recon-switch .rs-exc:hover .rs-exc-pop,.recon-switch .rs-exc:focus .rs-exc-pop,.recon-switch .rs-exc:focus-within .rs-exc-pop{display:block}
+.recon-switch .rs-exc-pop h4{font-size:13px;margin:0 0 4px;color:#fff}
+.recon-switch .rs-exc-pop p{margin:0 0 8px;color:#c4d2df}
+.recon-switch .rs-exc-pop ul{margin:0 0 8px 18px;padding:0}
+.recon-switch .rs-exc-pop li{color:#fff;font-weight:700}
+.recon-switch .rs-exc-pop .rs-exc-foot{font-size:11.5px;color:#9fb3c6;margin:0}
+@media (max-width:760px){.recon-switch .rs-exc{margin-left:0}.recon-switch .rs-exc-pop{left:0;right:auto}}
 @media (max-width:760px){.recon-switch{padding:10px 16px}.recon-switch .rs-seg{flex-wrap:wrap}}
 @media print{.recon-switch,.sn-burger{display:none!important}}
 </style>
@@ -933,6 +945,7 @@ body.sn-collapsed #topnav #nav-health .hl-navdot{margin-left:0}
     <button type="button" role="tab" data-rv="membership" onclick="openRecon('membership')">👥 Memberships</button>
     <button type="button" role="tab" data-rv="ar" onclick="openRecon('ar')">💵 Accounts Receivable</button>
   </div>
+  <div class="rs-exc" tabindex="0" aria-label="Reconciliation exceptions"><span class="rs-exc-btn">ⓘ Exceptions <b class="rs-exc-n"></b></span><div class="rs-exc-pop" role="tooltip"></div></div>
 </div>
 <div id="viewBills">
 <div class="fbar">
@@ -2028,6 +2041,7 @@ body.sn-collapsed #topnav #nav-health .hl-navdot{margin-left:0}
     <button type="button" role="tab" data-rv="membership" onclick="openRecon('membership')">👥 Memberships</button>
     <button type="button" role="tab" data-rv="ar" onclick="openRecon('ar')">💵 Accounts Receivable</button>
   </div>
+  <div class="rs-exc" tabindex="0" aria-label="Reconciliation exceptions"><span class="rs-exc-btn">ⓘ Exceptions <b class="rs-exc-n"></b></span><div class="rs-exc-pop" role="tooltip"></div></div>
 </div>
 <div class="fbar">
   <label>Accounts Receivable</label>
@@ -2590,7 +2604,19 @@ const ITEM_SPLIT_ACCOUNT_ALIASES=['item split account','split account','item acc
 // flagged as a "Missing in ST" discrepancy — it's still a real QB expense
 // though, so it stays in the QB Total KPI and the Item Split Account
 // spend chart; see the stNotRequired flag set in makeRow() below.
-const NO_ST_MATCH_ACCOUNTS=new Set(['supplies (shop)']);
+// Edit NO_ST_MATCH_ACCOUNT_LIST to add/remove exceptions — the "Exceptions" tooltip at the top of
+// the Reconciliation page is built from this same list, so it always shows what's actually applied.
+// 2026-11-10: added "COGS INDIRECT:Tools and Small Equipment" per Ariel (lives only in QuickBooks).
+const NO_ST_MATCH_ACCOUNT_LIST=['Supplies (shop)','COGS INDIRECT:Tools and Small Equipment'];
+const NO_ST_MATCH_ACCOUNTS=new Set(NO_ST_MATCH_ACCOUNT_LIST.map(a=>a.trim().toLowerCase()));
+// A QB bill's itemAccount is every split account on the bill joined with " | ". The bill is exempt only
+// when EVERY account on it is an exception. Also matches when QuickBooks prefixes the parent account
+// (e.g. "Cost of Goods Sold:COGS INDIRECT:Tools and Small Equipment").
+function isNoStMatchAccount(acct){
+  const parts=String(acct||'').split('|').map(x=>x.trim().toLowerCase()).filter(Boolean);
+  if(!parts.length) return false;
+  return parts.every(p=>NO_ST_MATCH_ACCOUNTS.has(p)||[...NO_ST_MATCH_ACCOUNTS].some(e=>p.endsWith(':'+e)));
+}
 
 // Vendor Invoice Coverage's source-of-truth used to be a hand-maintained
 // "Vendor Transactions" Google Sheet, ingested via Code.gs and served
@@ -3227,7 +3253,7 @@ function buildCase(qs,ss,o){
     if(!group&&qs[0].date&&ss[0].date&&!sameMonth(qs[0].date,ss[0].date))flags.add('date_mismatch');
   }
   const qa=qs[0], sa=ss[0], any=qa||sa;
-  const stNotRequired=!!(qs.length&&!ss.length&&qs.every(b=>NO_ST_MATCH_ACCOUNTS.has(String(b.itemAccount||'').trim().toLowerCase())));
+  const stNotRequired=!!(qs.length&&!ss.length&&qs.every(b=>isNoStMatchAccount(b.itemAccount)));
   if(stNotRequired){ flags.delete('missing_st'); flags.add('st_not_required'); }
   const flagList=ISSUE_ORDER.filter(f=>flags.has(f));
   const needsReview=flagList.some(f=>REVIEW_FLAGS.has(f));
@@ -11767,6 +11793,18 @@ function openRecon(v){
   syncReconSeg();
 }
 syncReconSeg();
+
+/* Exceptions tooltip on the Reconciliation page — built from NO_ST_MATCH_ACCOUNT_LIST (Bills rules). */
+(function(){
+  if(typeof NO_ST_MATCH_ACCOUNT_LIST==='undefined') return;
+  var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+  var html='<h4>Bills: QuickBooks-only accounts</h4>'+
+    '<p>QuickBooks bills coded to these accounts are not expected in ServiceTitan. They show as \u201cNot required in ST\u201d instead of \u201cMissing in ST\u201d and are not counted as discrepancies, but they still count in the QuickBooks total.</p>'+
+    '<ul>'+NO_ST_MATCH_ACCOUNT_LIST.map(function(a){return '<li>'+esc(a)+'</li>';}).join('')+'</ul>'+
+    '<p class="rs-exc-foot">A bill split across several accounts is exempt only when every account on it is on this list. If a bill on one of these accounts does match a ServiceTitan bill, it is still reconciled normally.</p>';
+  document.querySelectorAll('.recon-switch .rs-exc-pop').forEach(function(p){p.innerHTML=html;});
+  document.querySelectorAll('.recon-switch .rs-exc-n').forEach(function(n){n.textContent=NO_ST_MATCH_ACCOUNT_LIST.length;});
+})();
 </script>
 </body>
 </html>
