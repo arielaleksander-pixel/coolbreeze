@@ -757,11 +757,89 @@ td.rc-copy.rc-copied{background:rgba(15,165,114,.25)!important}
 #db8 .ca-lown{display:inline-block;margin-left:6px;padding:0 6px;border-radius:999px;background:var(--jb-amber-bg);color:var(--jb-amber);font-size:10px;font-weight:800;vertical-align:middle}
 #db8 .cac-missing{background:var(--jb-amber-bg);border:1px solid #ecd28f;color:#6b4a05;border-radius:10px;padding:11px 14px;font-size:12.5px;line-height:1.5;margin:0 0 12px}
 </style>
+<style id="left-sidebar-nav">
+/* ══ LEFT SIDEBAR NAV — mirrors the Best Plumber dashboard's collapsible sidebar (2026-11-10).
+   Expanded: full labels, a section's pages listed under it (opens for the active section; the caret
+   toggles it). Collapsed (« button at the bottom, or ☰ in the header): icon-only rail, a section's
+   pages show as a white flyout on hover. The choice is remembered per browser.
+   Phones (<=760px): off-canvas drawer opened from ☰.
+   #topnav-prefixed so these win over the older top-bar .topnav rules earlier in the file. ── */
+.app-shell{flex-direction:row;align-items:flex-start}
+#topnav{--sn-w:240px;position:sticky;top:68px;align-self:flex-start;width:var(--sn-w);min-width:0;flex-shrink:0;height:calc(100vh - 68px);
+  overflow-y:auto;overflow-x:hidden;background:var(--navy-mid);border:none;border-right:1px solid rgba(0,0,0,.25);box-shadow:2px 0 12px rgba(0,0,0,.12);
+  display:flex;flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:1px;padding:10px 8px 8px;z-index:90;transition:width .18s ease}
+#topnav::-webkit-scrollbar{width:6px}
+#topnav::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18)}
+#topnav .sn-section{font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:rgba(255,255,255,.38);padding:14px 12px 6px;white-space:nowrap}
+#topnav .topnav-item{position:relative;display:block}
+#topnav .sidebar-item{position:relative;display:flex;align-items:center;gap:11px;width:100%;height:40px;padding:0 8px 0 12px;margin:0;border:none;border-radius:8px;background:transparent;color:rgba(255,255,255,.68);font-family:inherit;font-size:13.5px;font-weight:600;letter-spacing:.1px;text-align:left;white-space:nowrap;overflow:hidden;cursor:pointer;text-decoration:none;transition:background .15s,color .15s}
+#topnav .sidebar-item::after{display:none}
+#topnav .sidebar-item:hover{background:rgba(255,255,255,.07);color:#fff}
+#topnav .sidebar-item.active{background:rgba(255,255,255,.12);color:#fff}
+#topnav .sidebar-item.active::before{content:'';position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--accent)}
+#topnav .sidebar-icon{font-size:16px;width:22px;text-align:center;flex-shrink:0;opacity:.9}
+#topnav .sidebar-label{flex:1;min-width:0;display:flex;align-items:center;gap:4px;overflow:hidden;text-overflow:ellipsis}
+#topnav .topnav-caret,#topnav .topnav-item:hover .topnav-caret{flex-shrink:0;width:24px;height:24px;margin:0;border:none;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:0;color:inherit;opacity:.6;transform:none;transition:background .15s,opacity .15s}
+#topnav .topnav-caret::before{content:'';width:6px;height:6px;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;transform:rotate(-45deg);transition:transform .18s}
+#topnav .topnav-caret:hover{background:rgba(255,255,255,.14);opacity:1}
+#topnav .topnav-item.open > .sidebar-item .topnav-caret::before{transform:translate(0,-2px) rotate(45deg)}
+#topnav .topnav-dropdown,#topnav .topnav-item:hover .topnav-dropdown,#topnav .topnav-item:focus-within .topnav-dropdown{
+  display:none;position:static;opacity:1;visibility:visible;transform:none;transition:none;min-width:0;
+  margin:2px 0 6px 23px;padding:0 0 0 10px;background:transparent;border:none;border-left:1px solid rgba(255,255,255,.14);border-radius:0;box-shadow:none}
+#topnav .topnav-item.open > .topnav-dropdown{display:block}
+#topnav .topnav-dropdown::before{display:none}
+#topnav .topnav-dropdown button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:transparent;border:none;padding:7px 10px 7px 8px;font-size:12.5px;font-weight:600;color:rgba(255,255,255,.6);border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#topnav .topnav-dropdown button:hover{background:rgba(255,255,255,.07);color:#fff}
+#topnav .topnav-dropdown button.active{background:transparent;color:rgba(255,255,255,.6)}
+#topnav .topnav-item > .sidebar-item.active ~ .topnav-dropdown button.active{color:#fff;background:rgba(255,255,255,.1)}
+#topnav .tn-dd-ic,#topnav .topnav-dropdown button:hover .tn-dd-ic,#topnav .topnav-dropdown button.active .tn-dd-ic{font-size:13px;width:18px;height:auto;text-align:center;flex-shrink:0;opacity:.85;background:transparent;color:inherit}
+#topnav .hl-navdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-left:5px;box-shadow:0 0 0 2px rgba(255,255,255,.85)}
+#topnav .sn-foot{margin-top:auto;padding-top:8px;border-top:1px solid rgba(255,255,255,.08)}
+#topnav .sn-collapse{display:flex;align-items:center;gap:11px;width:100%;height:36px;padding:0 12px;border:none;border-radius:8px;background:transparent;color:rgba(255,255,255,.55);font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+#topnav .sn-collapse:hover{background:rgba(255,255,255,.07);color:#fff}
+#topnav .sn-collapse .sn-ic{width:22px;text-align:center;font-size:15px;flex-shrink:0;transition:transform .18s}
+/* Collapsed: icon-only rail; a section's pages show as a white flyout on hover */
+body.sn-collapsed #topnav{--sn-w:64px;overflow:visible}
+body.sn-collapsed #topnav .sidebar-label,body.sn-collapsed #topnav .topnav-caret,body.sn-collapsed #topnav .topnav-item:hover .topnav-caret,body.sn-collapsed #topnav .sn-collapse .sn-txt{display:none}
+body.sn-collapsed #topnav .sidebar-item,body.sn-collapsed #topnav .sn-collapse{justify-content:center;padding:0}
+body.sn-collapsed #topnav .sn-collapse .sn-ic{transform:rotate(180deg)}
+body.sn-collapsed #topnav .sn-section{font-size:0;padding:0;margin:8px 10px;border-top:1px solid rgba(255,255,255,.12)}
+body.sn-collapsed #topnav .topnav-item > .topnav-dropdown{display:none}
+body.sn-collapsed #topnav .topnav-item:hover > .topnav-dropdown,body.sn-collapsed #topnav .topnav-item:focus-within > .topnav-dropdown{display:block;position:absolute;left:calc(100% + 8px);top:0;margin:0;min-width:220px;padding:6px;background:#fff;border:1px solid var(--gray-200);border-radius:10px;box-shadow:0 14px 34px rgba(10,37,64,.22),0 2px 6px rgba(10,37,64,.08);z-index:300}
+body.sn-collapsed #topnav .topnav-dropdown::before{display:block;content:'';position:absolute;left:-12px;top:0;bottom:0;width:12px}
+body.sn-collapsed #topnav .topnav-dropdown button{color:var(--gray-700)}
+body.sn-collapsed #topnav .topnav-dropdown button:hover{background:var(--gray-50);color:var(--text)}
+body.sn-collapsed #topnav .topnav-item > .sidebar-item.active ~ .topnav-dropdown button.active{color:var(--navy);background:rgba(34,211,238,.14)}
+body.sn-collapsed #topnav #nav-health .sidebar-label{display:flex;position:absolute;top:5px;left:calc(50% + 3px);font-size:0;overflow:visible}
+body.sn-collapsed #topnav #nav-health .hl-navdot{margin-left:0}
+/* header ☰ button */
+.sn-burger{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;flex-shrink:0;margin-right:14px;border-radius:8px;border:1px solid rgba(255,255,255,.26);background:rgba(255,255,255,.08);color:#fff;font-size:17px;line-height:1;cursor:pointer;transition:background .15s,border-color .15s}
+.sn-burger:hover{background:rgba(255,255,255,.17);border-color:rgba(255,255,255,.5)}
+.sn-backdrop{display:none}
+@media (max-width:760px){
+  #topnav{position:fixed;left:0;top:0;width:264px;height:100vh;z-index:1000;padding-top:16px;transform:translateX(-100%);transition:transform .2s ease;box-shadow:none}
+  body.sn-mobile-open #topnav{transform:none;box-shadow:8px 0 30px rgba(0,0,0,.35)}
+  body.sn-mobile-open .sn-backdrop{display:block;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:999}
+  #topnav .sn-foot{display:none}
+  .app-shell{flex-direction:column}
+}
+/* ── Reconciliation page switch (Bills / Memberships / Accounts Receivable) ── */
+.recon-switch{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:12px 32px;background:var(--navy);border-bottom:1px solid rgba(255,255,255,.08)}
+.recon-switch .rs-title{color:#fff;font-weight:800;font-size:15px;letter-spacing:-.1px;margin-right:4px}
+.recon-switch .rs-seg{display:inline-flex;padding:3px;gap:3px;border-radius:10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12)}
+.recon-switch .rs-seg button{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 14px;border:none;border-radius:7px;background:transparent;color:rgba(255,255,255,.7);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .12s,color .12s}
+.recon-switch .rs-seg button:hover{color:#fff;background:rgba(255,255,255,.07)}
+.recon-switch .rs-seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.recon-switch .rs-seg button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:760px){.recon-switch{padding:10px 16px}.recon-switch .rs-seg{flex-wrap:wrap}}
+@media print{.recon-switch,.sn-burger{display:none!important}}
+</style>
 </head>
 <body data-cb-page="dashboard">
 
 <header>
   <div class="hdr-l">
+    <button type="button" class="sn-burger" id="snBurger" aria-label="Collapse menu" title="Collapse menu" onclick="window.cbMenuButton&&window.cbMenuButton()">☰</button>
     <svg class="logo-svg" viewBox="0 0 190 48" xmlns="http://www.w3.org/2000/svg">
       <circle cx="24" cy="24" r="22" fill="#0a2540" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
       <path d="M9 17 Q24 8 39 17" stroke="#22d3ee" stroke-width="3.2" fill="none" stroke-linecap="round"/>
@@ -792,6 +870,8 @@ td.rc-copy.rc-copied{background:rgba(15,165,114,.25)!important}
      <button class="sidebar-item" onclick="showDB(2)"> here, and register its
      init/apply/render functions the way showDB() already dispatches for db1. -->
 <nav class="topnav" id="topnav">
+  <div class="topnav-item"><a class="sidebar-item" id="nav-home" href="index.html" title="Home"><span class="sidebar-icon">🏠</span><span class="sidebar-label">Home</span></a></div>
+  <div class="sn-section">Dashboards</div>
   <div class="topnav-item">
   <button class="sidebar-item" id="nav-db2" onclick="showDB(2)" title="Jobs Performance">
     <span class="sidebar-icon">🔧</span>
@@ -828,23 +908,32 @@ td.rc-copy.rc-copied{background:rgba(15,165,114,.25)!important}
   </div>
   </div>
   <div class="topnav-item">
-  <button class="sidebar-item active" id="nav-db1" onclick="showDB(1)" title="Financials">
-    <span class="sidebar-icon">💰</span>
-    <span class="sidebar-label">Financials</span>
-    <span class="topnav-caret">▾</span>
+  <button class="sidebar-item active" id="nav-db1" onclick="openRecon()" title="Reconciliation: Bills, Memberships and Accounts Receivable">
+    <span class="sidebar-icon">⚖️</span>
+    <span class="sidebar-label">Reconciliation</span>
   </button>
-  <div class="topnav-dropdown" id="financialsDropdown">
-    <button data-sub="bills" onclick="showDB(1);switchReconView('bills');navPick('financialsDropdown','bills')" class="active"><span class="tn-dd-ic">🧾</span><span>Bills Reconciliation</span></button>
-    <button data-sub="membership" onclick="showDB(1);switchReconView('membership');navPick('financialsDropdown','membership')"><span class="tn-dd-ic">👥</span><span>Membership Reconciliation</span></button>
-    <button data-sub="ar" onclick="showDB(5);navPick('financialsDropdown','ar')"><span class="tn-dd-ic">💵</span><span>Accounts Receivable</span></button>
   </div>
+  <div class="sn-section">Help &amp; status</div>
+  <div class="topnav-item"><a class="sidebar-item" id="nav-kb" href="knowledge-base.html" title="Knowledge Base"><span class="sidebar-icon">📚</span><span class="sidebar-label">Knowledge Base</span></a></div>
+  <div class="topnav-item"><a class="sidebar-item" id="nav-health" href="health.html" title="Dashboard Health"><span class="sidebar-icon">🩺</span><span class="sidebar-label">Dashboard Health <i class="hl-dot wait hl-navdot" id="hlNavDot"></i></span></a></div>
+  <div class="sn-foot">
+  <button type="button" class="sn-collapse" id="snCollapseBtn" onclick="window.cbToggleSidenav&&window.cbToggleSidenav()" title="Collapse menu" aria-expanded="true"><span class="sn-ic">«</span><span class="sn-txt">Collapse menu</span></button>
   </div>
-  <nav class="cb-links"><a href="index.html"><span class="ic">🏠</span>Home</a><a href="knowledge-base.html"><span class="ic">📚</span>Knowledge Base</a><a href="health.html"><span class="ic">🩺</span>Dashboard Health <i class="hl-dot wait" id="hlNavDot"></i></a></nav>
 </nav>
+<script>try{if(localStorage.getItem('cb_sidenav_collapsed')!=='0'&&!window.matchMedia('(max-width:760px)').matches)document.body.classList.add('sn-collapsed');}catch(e){}</script>
+<div class="sn-backdrop" id="snBackdrop" onclick="window.cbMobileNav&&window.cbMobileNav(false)"></div>
 <!-- ══════════════════════════════════════════ -->
 <!-- DASHBOARD 1: ACCOUNTING RECONCILIATION      -->
 <!-- ══════════════════════════════════════════ -->
 <div class="db-panel active" id="db1">
+<div class="recon-switch" role="tablist" aria-label="Reconciliation type">
+  <span class="rs-title">Reconciliation</span>
+  <div class="rs-seg">
+    <button type="button" role="tab" data-rv="bills" onclick="openRecon('bills')">🧾 Bills</button>
+    <button type="button" role="tab" data-rv="membership" onclick="openRecon('membership')">👥 Memberships</button>
+    <button type="button" role="tab" data-rv="ar" onclick="openRecon('ar')">💵 Accounts Receivable</button>
+  </div>
+</div>
 <div id="viewBills">
 <div class="fbar">
   <label>Bills dated</label>
@@ -1933,6 +2022,14 @@ td.rc-copy.rc-copied{background:rgba(15,165,114,.25)!important}
 <!-- DASHBOARD 5: ACCOUNTS RECEIVABLE             -->
 <!-- ══════════════════════════════════════════ -->
 <div class="db-panel" id="db5">
+<div class="recon-switch" role="tablist" aria-label="Reconciliation type">
+  <span class="rs-title">Reconciliation</span>
+  <div class="rs-seg">
+    <button type="button" role="tab" data-rv="bills" onclick="openRecon('bills')">🧾 Bills</button>
+    <button type="button" role="tab" data-rv="membership" onclick="openRecon('membership')">👥 Memberships</button>
+    <button type="button" role="tab" data-rv="ar" onclick="openRecon('ar')">💵 Accounts Receivable</button>
+  </div>
+</div>
 <div class="fbar">
   <label>Accounts Receivable</label>
 
@@ -3482,6 +3579,8 @@ function showDB(n){
   if(n===6 && typeof MEM2_CHARTS!=='undefined'){ Object.values(MEM2_CHARTS).forEach(c=>{ if(c)c.resize(); }); }
   if(n===7 && typeof rvOnShow==='function') rvOnShow();
   if(n===8 && typeof cdbOnShow==='function') cdbOnShow();
+  if(n===5 && typeof CB_RECON_VIEW!=='undefined') CB_RECON_VIEW='ar';
+  if((n===1||n===5) && typeof syncReconSeg==='function') syncReconSeg();
   // A link like dashboard.html#bills can open another tab first, so db1's charts may be drawn while hidden.
   if(n===1){ requestAnimationFrame(()=>{ [typeof monthChart!=='undefined'?monthChart:null,typeof netChart!=='undefined'?netChart:null,typeof vendorChart!=='undefined'?vendorChart:null,typeof itemAccountChart!=='undefined'?itemAccountChart:null,typeof membershipChart!=='undefined'?membershipChart:null].forEach(c=>{ if(c&&c.resize)c.resize(); }); }); }
 }
@@ -3492,6 +3591,7 @@ function showDB(n){
 // every table/chart from both dimensions at once.
 function switchReconView(view){
   const isMembership=view==='membership';
+  if(typeof CB_RECON_VIEW!=='undefined'){ CB_RECON_VIEW=isMembership?'membership':'bills'; if(typeof syncReconSeg==='function') syncReconSeg(); }
   document.getElementById('viewBills').style.display=isMembership?'none':'';
   document.getElementById('viewMembership').style.display=isMembership?'':'none';
   const sub=document.querySelector('.hdr-t p');
@@ -11603,5 +11703,71 @@ window.addEventListener('hashchange',cbOpenFromHash);
 </script>
 <script src="cb-health.js"></script>
 
+<script>
+/* ── LEFT SIDEBAR (2026-11-10, mirrored from the Best Plumber dashboard) ──
+   - Opens the section of whichever top-level item is active (watches the .active class, so it
+     follows every showDB() call) and closes the others; the caret toggles a section's pages.
+   - Collapse to an icon rail; remembered per browser (localStorage, wrapped in try/catch).
+   - Phones (<=760px): off-canvas drawer opened from the header ☰ button. */
+(function(){
+  var KEY='cb_sidenav_collapsed';
+  var nav=document.getElementById('topnav'); if(!nav) return;
+  var mq=window.matchMedia('(max-width:760px)');
+  var collapsed=true; try{collapsed=localStorage.getItem(KEY)!=='0';}catch(e){} /* collapsed by default; '0' = user expanded it */
+  function nudge(){setTimeout(function(){try{window.dispatchEvent(new Event('resize'));}catch(e){}},230);}
+  function syncBurger(){ var bb=document.getElementById('snBurger'); if(!bb) return; var t=mq.matches?(document.body.classList.contains('sn-mobile-open')?'Close menu':'Open menu'):(collapsed?'Expand menu':'Collapse menu'); bb.title=t; bb.setAttribute('aria-label',t); }
+  function applyCollapsed(){
+    document.body.classList.toggle('sn-collapsed', collapsed && !mq.matches);
+    var b=document.getElementById('snCollapseBtn');
+    if(b){ b.title=collapsed?'Expand menu':'Collapse menu'; b.setAttribute('aria-expanded',String(!collapsed));
+      var t=b.querySelector('.sn-txt'); if(t) t.textContent=collapsed?'Expand menu':'Collapse menu'; }
+    syncBurger();
+  }
+  window.cbToggleSidenav=function(){ collapsed=!collapsed; try{localStorage.setItem(KEY,collapsed?'1':'0');}catch(e){} applyCollapsed(); nudge(); };
+  window.cbMenuButton=function(){ if(mq.matches) window.cbMobileNav(!document.body.classList.contains('sn-mobile-open')); else window.cbToggleSidenav(); };
+  window.cbMobileNav=function(open){ document.body.classList.toggle('sn-mobile-open',!!open); syncBurger(); };
+  function syncOpen(){
+    Array.prototype.forEach.call(nav.querySelectorAll('.topnav-item'),function(it){
+      var btn=it.querySelector('.sidebar-item'), dd=it.querySelector('.topnav-dropdown');
+      if(!dd) return;
+      it.classList.toggle('open', !!(btn && btn.classList.contains('active')));
+    });
+  }
+  Array.prototype.forEach.call(nav.querySelectorAll('.topnav-caret'),function(c){
+    c.setAttribute('role','button'); c.setAttribute('title','Show or hide this section’s pages');
+    c.addEventListener('click',function(e){ e.preventDefault(); e.stopPropagation(); var it=c.closest('.topnav-item'); if(it) it.classList.toggle('open'); });
+  });
+  nav.addEventListener('click',function(e){
+    if(!mq.matches) return;
+    var b=e.target.closest('button,a'); if(!b || b.id==='snCollapseBtn' || b.disabled) return;
+    window.cbMobileNav(false);
+  });
+  document.addEventListener('keydown',function(e){ if(e.key==='Escape' && document.body.classList.contains('sn-mobile-open')) window.cbMobileNav(false); });
+  try{
+    new MutationObserver(function(muts){
+      for(var i=0;i<muts.length;i++){ var t=muts[i].target; if(t.classList && t.classList.contains('sidebar-item')){ syncOpen(); return; } }
+    }).observe(nav,{subtree:true,attributes:true,attributeFilter:['class']});
+  }catch(e){}
+  function onMq(){ applyCollapsed(); if(!mq.matches) window.cbMobileNav(false); }
+  if(mq.addEventListener) mq.addEventListener('change',onMq); else if(mq.addListener) mq.addListener(onMq);
+  applyCollapsed(); syncOpen();
+})();
+
+/* ── Reconciliation page: one sidebar entry, a switch at the top of the page picks
+   Bills (db1/viewBills), Memberships (db1/viewMembership) or Accounts Receivable (db5). ── */
+var CB_RECON_VIEW='bills';
+function syncReconSeg(){
+  document.querySelectorAll('.recon-switch [data-rv]').forEach(function(b){
+    var on=b.getAttribute('data-rv')===CB_RECON_VIEW; b.classList.toggle('on',on); b.setAttribute('aria-selected',on?'true':'false');
+  });
+}
+function openRecon(v){
+  v=v||CB_RECON_VIEW||'bills';
+  if(v==='ar'){ showDB(5); }
+  else{ showDB(1); switchReconView(v); }
+  syncReconSeg();
+}
+syncReconSeg();
+</script>
 </body>
 </html>
